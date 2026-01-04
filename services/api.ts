@@ -53,11 +53,15 @@ const normalizeDrama = (item: any): Drama => {
     return url.replace('http://', 'https://');
   };
 
+  // Use placehold.co for reliable placeholders matching the dark theme
+  const PLACEHOLDER_THUMB = 'https://placehold.co/300x450/1e1e1e/FFF?text=No+Image';
+  const PLACEHOLDER_POSTER = 'https://placehold.co/1920x1080/1e1e1e/FFF?text=No+Poster';
+
   return {
     id: id,
     title: title,
-    thumbnail: fixUrl(item.cover || item.thumbnail || item.image) || 'https://via.placeholder.com/300x450?text=No+Image',
-    poster: fixUrl(item.poster || item.cover || item.thumbnail) || 'https://via.placeholder.com/1920x1080?text=No+Poster',
+    thumbnail: fixUrl(item.cover || item.thumbnail || item.image) || PLACEHOLDER_THUMB,
+    poster: fixUrl(item.poster || item.cover || item.thumbnail) || PLACEHOLDER_POSTER,
     rating: parseFloat(item.rating || '0') || 9.0,
     genres: Array.isArray(item.genres) ? item.genres : [item.category || 'Drama'],
     description: item.intro || item.synopsis || item.description || 'No synopsis available.',
@@ -169,7 +173,7 @@ export const dramaService = {
             episodeNumber: i + 1,
             title: `Episode ${i + 1}`,
             streamUrl: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-            thumbnail: "https://via.placeholder.com/320x180?text=No+Signal"
+            thumbnail: "https://placehold.co/320x180/1e1e1e/FFF?text=No+Signal"
         }));
     }
     
