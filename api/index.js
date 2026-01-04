@@ -1,10 +1,8 @@
+
 // Vercel Serverless Function (Node.js)
 // Acts as a proxy to bypass CORS in production
 
 export default async function handler(request, response) {
-  // SECURITY: Read from Environment Variable.
-  // Do NOT commit the actual URL to GitHub.
-  // Set 'UPSTREAM_API_URL' in your Vercel Project Settings.
   const API_BASE_URL = process.env.UPSTREAM_API_URL;
 
   if (!API_BASE_URL) {
@@ -12,19 +10,32 @@ export default async function handler(request, response) {
     return response.status(500).json({ error: 'Server Configuration Error' });
   }
 
-  // Get the path from the query parameter
-  const { path } = request.query;
+  // Robust path extraction: 
+  // 1. Try to get 'path' from query (set by vercel.json rewrite)
+  // 2. Fallback to extracting from request.url if query is missing (common in Vercel's direct routing)
+  let { path } = request.query;
   
   if (!path) {
-    return response.status(400).json({ error: 'Path is required' });
+    const urlParts = request.url.split('/api/');
+    if (urlParts.length > 1) {
+      path = urlParts[1].split('?')[0];
+    }
+  }
+  
+  if (!path || path === 'index.js') {
+    return response.status(400).json({ 
+      error: 'Path is required', 
+      received_url: request.url,
+      hint: 'Ensure you are calling /api/endpoint_name'
+    });
   }
 
-  // Sanitize path (Basic) to prevent directory traversal attacks if the upstream supports file serving
-  // Although fetch handles URL encoding, it's good practice to ensure we aren't passing weird chars.
+  // Clean path and construct target URL
   const cleanPathParam = Array.isArray(path) ? path.join('/') : path;
-  const targetUrl = new URL(`${API_BASE_URL}/${cleanPathParam}`);
+  const baseUrl = API_BASE_URL.replace(/\/$/, ''); // Remove trailing slash
+  const targetUrl = new URL(`${baseUrl}/${cleanPathParam}`);
   
-  // Forward other query parameters
+  // Forward all other query parameters
   Object.keys(request.query).forEach(key => {
     if (key !== 'path') {
       targetUrl.searchParams.append(key, request.query[key]);
@@ -35,16 +46,24 @@ export default async function handler(request, response) {
     const apiResponse = await fetch(targetUrl.toString(), {
       headers: {
         'Accept': 'application/json',
-        // Optional: Add a custom User-Agent so the upstream knows it's your proxy
-        'User-Agent': 'Dracin-Stream-Proxy/1.0' 
+        'User-Agent': 'Dracin-Stream-Proxy/1.1' 
       }
     });
 
-    const data = await apiResponse.json();
+    // Handle non-JSON or error responses from upstream
+    const contentType = apiResponse.headers.get('content-type');
+    let data;
+    
+    if (contentType && contentType.includes('application/json')) {
+      data = await apiResponse.json();
+    } else {
+      // If not JSON, return the raw text or a placeholder
+      const text = await apiResponse.text();
+      console.warn(`Upstream returned non-JSON for ${path}:`, text.substring(0, 100));
+      data = { result: null, raw: text.substring(0, 200), message: 'Upstream returned non-JSON response' };
+    }
     
     // Set CORS headers
-    // SECURITY IMPROVEMENT: In production, you might want to replace '*' with your actual Vercel domain
-    // e.g., process.env.ALLOWED_ORIGIN || '*'
     response.setHeader('Access-Control-Allow-Credentials', true);
     response.setHeader('Access-Control-Allow-Origin', '*'); 
     response.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
@@ -53,10 +72,17 @@ export default async function handler(request, response) {
       'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
     );
 
+    if (request.method === 'OPTIONS') {
+      return response.status(200).end();
+    }
+
     return response.status(apiResponse.status).json(data);
   } catch (error) {
-    console.error('Proxy Error:', error);
-    // SECURITY: Do not leak the upstream URL or stack trace in the error message to the client
-    return response.status(500).json({ error: 'Failed to fetch data from upstream source' });
+    console.error('Proxy Error:', error.message);
+    return response.status(502).json({ 
+      error: 'Bad Gateway', 
+      message: 'Failed to communicate with upstream API',
+      details: error.message
+    });
   }
 }
