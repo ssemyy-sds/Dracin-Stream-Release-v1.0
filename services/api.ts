@@ -7,8 +7,15 @@ import { MOCK_DRAMAS } from '../constants';
 const BASE_URL = '/api';
 
 const fetchFromApi = async (endpoint: string, params: Record<string, string> = {}) => {
-  // Construct URL with query parameters
-  const url = new URL(endpoint, window.location.origin + BASE_URL); // results in /api/endpoint
+  // Fix URL construction:
+  // If endpoint is "/foryou", we want "/api/foryou", not "/foryou" (which new URL() does by default if base has path)
+  
+  // Remove leading slash from endpoint to ensure clean concatenation
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
+  
+  // Construct absolute URL manually to ensure /api prefix is kept
+  const url = new URL(`${window.location.origin}${BASE_URL}/${cleanEndpoint}`);
+  
   Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
   
   try {
