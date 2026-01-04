@@ -1,15 +1,10 @@
+
 import { Drama, Episode } from '../types';
 import { MOCK_DRAMAS } from '../constants';
 
-// CHANGE: Point to relative path. 
-// In Dev: Vite proxy handles this.
-// In Prod: Vercel Serverless Function handles this.
 const BASE_URL = '/api';
 
 const fetchFromApi = async (endpoint: string, params: Record<string, string> = {}) => {
-  // Fix URL construction:
-  // If endpoint is "/foryou", we want "/api/foryou", not "/foryou" (which new URL() does by default if base has path)
-  
   // Remove leading slash from endpoint to ensure clean concatenation
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
   
@@ -26,12 +21,15 @@ const fetchFromApi = async (endpoint: string, params: Record<string, string> = {
     });
 
     if (!response.ok) {
-      throw new Error(`API Error: ${response.status}`);
+      console.warn(`API responded with status ${response.status} for ${endpoint}`);
+      // Special case: if 404/400, we immediately return null to trigger fallback
+      return null;
     }
     
     const json = await response.json();
     
     // Validation: Ensure we actually got data
+    // The structure might be { data: [...] } or { result: [...] } or just [...]
     const result = json.data || json.result || json;
     
     if (!result) return null;
@@ -39,7 +37,7 @@ const fetchFromApi = async (endpoint: string, params: Record<string, string> = {
     
     return result;
   } catch (error) {
-    console.warn(`Fetch error for ${endpoint}:`, error);
+    console.error(`Fetch error for ${endpoint}:`, error);
     return null; // Return null to trigger fallback to Mock Data
   }
 };
@@ -49,8 +47,11 @@ const normalizeDrama = (item: any): Drama => {
   const id = item.bookId?.toString() || item.id?.toString() || crypto.randomUUID();
   const title = item.title || item.name || 'Unknown Title';
   
-  // Fix mixed content (http vs https) for images if necessary
-  const fixUrl = (url?: string) => url?.replace('http://', 'https://');
+  const fixUrl = (url?: string) => {
+    if (!url) return undefined;
+    if (url.startsWith('//')) return `https:${url}`;
+    return url.replace('http://', 'https://');
+  };
 
   return {
     id: id,
@@ -105,11 +106,10 @@ export const dramaService = {
 
   getDubIndo: async (): Promise<Drama[]> => {
     const data = await fetchFromApi('/dubindo');
-    if (!data || !Array.isArray(data)) return MOCK_DRAMAS;
+    if (!data || !Array.isArray(data)) return MOCK_DRAMAS.slice(2, 6);
     return data.map(normalizeDrama);
   },
 
-  // Helper to get by category slug
   getByCategory: async (category: string): Promise<Drama[]> => {
     switch (category.toLowerCase()) {
       case 'foryou': return dramaService.getForYou();
@@ -131,8 +131,6 @@ export const dramaService = {
     
     const item = Array.isArray(data) ? data[0] : data;
     const normalized = normalizeDrama(item);
-    if (normalized.title === 'Unknown Title') return MOCK_DRAMAS[0]; 
-    
     return normalized;
   },
 
