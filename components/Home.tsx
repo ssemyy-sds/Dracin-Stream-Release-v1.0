@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { dramaService } from '../services/api';
 import { Drama } from '../types';
@@ -63,10 +64,18 @@ export const Home: React.FC = () => {
               src={featuredDrama.poster} 
               alt={featuredDrama.title} 
               className="w-full h-full object-cover object-top"
-              // Add generic error handler for images
+              // Add robust error handler for images to prevent infinite loops and ensure display
               onError={(e) => {
                 const target = e.target as HTMLImageElement;
-                target.src = featuredDrama.thumbnail; // Fallback to thumbnail
+                const fallback = 'https://placehold.co/1920x1080/1e1e1e/FFF?text=Image+Error';
+                
+                // Try thumbnail first if it's different from current src
+                if (featuredDrama.thumbnail && target.src !== featuredDrama.thumbnail && !target.src.includes('placehold.co')) {
+                    target.src = featuredDrama.thumbnail;
+                } else if (target.src !== fallback) {
+                    // Fallback to placeholder if thumbnail also fails or was already used
+                    target.src = fallback;
+                }
               }}
             />
             <div className="absolute inset-0 bg-gradient-to-r from-black via-black/50 to-transparent" />
