@@ -1,11 +1,10 @@
-// src/services/api.ts
-import { Drama, Episode, ApiResponse } from '../types';
+// services/api.ts atau services/api.js
+import react from 'react';
 
 const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:5173/api';
 
-// Helper function to normalize drama data
-function normalizeDrama(data: any): Drama {
-  // Handle both nested and direct response
+// Helper function untuk normalize drama data dari API
+function normalizeDrama(data) {
   const book = data.book || data;
   
   return {
@@ -25,8 +24,8 @@ function normalizeDrama(data: any): Drama {
   };
 }
 
-// Get drama detail
-export async function getDramaDetail(bookId: string): Promise<Drama> {
+// Get drama detail by bookId
+export async function getDramaDetail(bookId) {
   try {
     const response = await fetch(`${API_BASE}/detail?bookId=${bookId}`);
     
@@ -34,7 +33,9 @@ export async function getDramaDetail(bookId: string): Promise<Drama> {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    const result: ApiResponse<{ book: any }> = await response.json();
+    const result = await response.json();
+    
+    console.log('[API] Drama detail response:', result);
     
     if (!result.success || !result.data) {
       throw new Error(result.message || 'Failed to fetch drama detail');
@@ -42,13 +43,13 @@ export async function getDramaDetail(bookId: string): Promise<Drama> {
     
     return normalizeDrama(result.data);
   } catch (error) {
-    console.error('Error fetching drama detail:', error);
+    console.error('[API] Error fetching drama detail:', error);
     throw error;
   }
 }
 
-// Get all episodes
-export async function getAllEpisodes(bookId: string): Promise<Episode[]> {
+// Get all episodes by bookId
+export async function getAllEpisodes(bookId) {
   try {
     const response = await fetch(`${API_BASE}/allepisode?bookId=${bookId}`);
     
@@ -56,23 +57,25 @@ export async function getAllEpisodes(bookId: string): Promise<Episode[]> {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    // API returns array directly, not wrapped in object
-    const episodes: Episode[] = await response.json();
+    // PENTING: API mengembalikan array langsung, bukan object
+    const episodes = await response.json();
+    
+    console.log('[API] Episodes response:', episodes);
     
     if (!Array.isArray(episodes)) {
-      console.error('Invalid episodes format:', episodes);
+      console.error('[API] Invalid episodes format:', episodes);
       return [];
     }
     
     return episodes;
   } catch (error) {
-    console.error('Error fetching episodes:', error);
+    console.error('[API] Error fetching episodes:', error);
     throw error;
   }
 }
 
 // Search dramas
-export async function searchDramas(query: string): Promise<Drama[]> {
+export async function searchDramas(query) {
   try {
     const response = await fetch(`${API_BASE}/search/dramabox?query=${encodeURIComponent(query)}`);
     
@@ -85,13 +88,13 @@ export async function searchDramas(query: string): Promise<Drama[]> {
     
     return dramas.map(normalizeDrama);
   } catch (error) {
-    console.error('Error searching dramas:', error);
+    console.error('[API] Error searching dramas:', error);
     return [];
   }
 }
 
 // Get trending dramas
-export async function getTrendingDramas(): Promise<Drama[]> {
+export async function getTrendingDramas() {
   try {
     const response = await fetch(`${API_BASE}/home/dramabox`);
     
@@ -104,7 +107,7 @@ export async function getTrendingDramas(): Promise<Drama[]> {
     
     return dramas.map(normalizeDrama);
   } catch (error) {
-    console.error('Error fetching trending dramas:', error);
+    console.error('[API] Error fetching trending dramas:', error);
     return [];
   }
 }
