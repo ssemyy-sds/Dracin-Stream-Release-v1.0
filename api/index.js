@@ -3,17 +3,26 @@
 // Acts as a proxy to bypass CORS in production
 
 export default async function handler(request, response) {
-  // Primary API from env, Secondary API hardcoded as requested fallback
   const PRIMARY_API = process.env.UPSTREAM_API_URL;
   const SECONDARY_API = 'https://api.gimita.id';
 
-  let { path, provider } = request.query;
+  // FIX: [DEP0169] DeprecationWarning.
+  // We manually parse the URL using WHATWG API to avoid accessing 'request.query'
+  // which might trigger legacy url.parse() internally in the serverless environment.
+  // We use a dummy base 'http://n' because request.url is relative in Vercel.
+  const requestUrl = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
+  const searchParams = requestUrl.searchParams;
+
+  let path = searchParams.get('path');
+  const provider = searchParams.get('provider');
   
-  // Robust path extraction
+  // Robust path extraction if not passed via rewrites (e.g. direct calls)
   if (!path) {
-    const urlParts = request.url.split('/api/');
-    if (urlParts.length > 1) {
-      path = urlParts[1].split('?')[0];
+    // Manually split from the pathname to avoid legacy parsing issues
+    const pathname = requestUrl.pathname;
+    const splitPath = pathname.split('/api/');
+    if (splitPath.length > 1) {
+      path = splitPath[1];
     }
   }
   
@@ -28,20 +37,15 @@ export default async function handler(request, response) {
   // Determine Base URL
   const baseUrl = (provider === 'secondary' ? SECONDARY_API : PRIMARY_API).replace(/\/$/, '');
   
-  // Clean path and construct target URL
   const cleanPathParam = Array.isArray(path) ? path.join('/') : path;
   
-  // Handle absolute path vs relative path logic regarding the base url structure
-  // If cleanPathParam already contains 'api/', avoid doubling it if the base also has it?
-  // Simply appending usually works if UPSTREAM_API_URL is the root domain. 
-  // Given user config: UPSTREAM is .../api/dramabox. We append the endpoint.
-  
+  // Construct target URL using WHATWG API
   const targetUrl = new URL(`${baseUrl}/${cleanPathParam}`);
   
   // Forward all other query parameters
-  Object.keys(request.query).forEach(key => {
+  searchParams.forEach((value, key) => {
     if (key !== 'path' && key !== 'provider') {
-      targetUrl.searchParams.append(key, request.query[key]);
+      targetUrl.searchParams.append(key, value);
     }
   });
 
@@ -61,13 +65,13 @@ export default async function handler(request, response) {
       data = await apiResponse.json();
     } else {
       const text = await apiResponse.text();
-      console.warn(`Upstream (${provider || 'primary'}) returned non-JSON for ${path}:`, text.substring(0, 100));
-      // Return null data but 200 OK so client can handle fallback gracefully
+      // Silently fail for non-json to avoid log spam, return empty data
+      // console.warn(`Upstream returned non-JSON for ${path}`);
       return response.status(200).json({ data: [], error: 'Upstream returned non-JSON' });
     }
     
     // Set CORS headers
-    response.setHeader('Access-Control-Allow-Credentials', true);
+    response.setHeader('Access-Control-Allow-Credentials', 'true');
     response.setHeader('Access-Control-Allow-Origin', '*'); 
     response.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
     response.setHeader(
@@ -79,8 +83,6 @@ export default async function handler(request, response) {
       return response.status(200).end();
     }
 
-    // Pass through the status unless it failed, then maybe mask it? 
-    // Let's pass it through.
     return response.status(apiResponse.status).json(data);
   } catch (error) {
     console.error('Proxy Error:', error.message);
