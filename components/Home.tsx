@@ -1,157 +1,215 @@
+// components/Home.tsx
+import react, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { getTrendingDramas } from '../services/api';
 
-import React, { useEffect, useState } from 'react';
-import { dramaService } from '../services/api';
-import { Drama } from '../types';
-import { DramaCard } from './DramaCard';
-import { Button } from './ui/Button';
-import { Play, Info } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-
-export const Home: React.FC = () => {
-  const [featuredDrama, setFeaturedDrama] = useState<Drama | null>(null);
-  const [trendingDramas, setTrendingDramas] = useState<Drama[]>([]);
-  const [latestDramas, setLatestDramas] = useState<Drama[]>([]);
-  const [forYouDramas, setForYouDramas] = useState<Drama[]>([]);
+export default function Home() {
+  const [dramas, setDramas] = useState([]);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
+    async function loadDramas() {
       try {
-        // Fetch specific categories in parallel for performance
-        const [trending, latest, forYou] = await Promise.all([
-          dramaService.getTrending(),
-          dramaService.getLatest(),
-          dramaService.getForYou()
-        ]);
-
-        // Prioritize For You for hero, fallback to Trending
-        const heroPool = forYou.length > 0 ? forYou : trending;
-        if (heroPool.length > 0) {
-          // Pick a random one from the first 5 for variety on refresh
-          const randomIndex = Math.floor(Math.random() * Math.min(5, heroPool.length));
-          setFeaturedDrama(heroPool[randomIndex]);
-        }
-
-        setTrendingDramas(trending);
-        setLatestDramas(latest);
-        setForYouDramas(forYou);
-      } catch (error) {
-        console.error("Error fetching home data:", error);
+        setLoading(true);
+        const data = await getTrendingDramas();
+        setDramas(data);
+      } catch (err) {
+        console.error('[Home] Error loading dramas:', err);
+        setError(err.message);
       } finally {
         setLoading(false);
       }
-    };
-    fetchData();
+    }
+
+    loadDramas();
   }, []);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-brand-orange border-t-transparent rounded-full animate-spin"></div>
+      <div className="min-h-screen bg-ultra-dark pt-20 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-orange mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading dramas...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-ultra-dark pt-20 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-500 mb-4">Error: {error}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="text-brand-orange hover:underline"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-brand-black pb-20">
+    <div className="min-h-screen bg-ultra-dark pt-20">
       {/* Hero Section */}
-      {featuredDrama && (
-        <div className="relative h-[85vh] w-full">
-          <div className="absolute inset-0">
-            <img 
-              src={featuredDrama.poster} 
-              alt={featuredDrama.title} 
-              className="w-full h-full object-cover object-top"
-              // Add robust error handler for images to prevent infinite loops and ensure display
-              onError={(e) => {
-                const target = e.target as HTMLImageElement;
-                const fallback = 'https://placehold.co/1920x1080/1e1e1e/FFF?text=Image+Error';
-                
-                // Try thumbnail first if it's different from current src
-                if (featuredDrama.thumbnail && target.src !== featuredDrama.thumbnail && !target.src.includes('placehold.co')) {
-                    target.src = featuredDrama.thumbnail;
-                } else if (target.src !== fallback) {
-                    // Fallback to placeholder if thumbnail also fails or was already used
-                    target.src = fallback;
-                }
-              }}
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-black via-black/50 to-transparent" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
-          </div>
-
-          <div className="absolute bottom-[20%] left-0 w-full px-4 md:px-12 max-w-3xl">
-            <div className="space-y-4 animate-fade-in-up">
-              <h1 className="text-4xl md:text-6xl font-extrabold text-white drop-shadow-lg leading-tight line-clamp-2">
-                {featuredDrama.title}
-              </h1>
-              <div className="flex items-center gap-3 text-sm md:text-base font-medium">
-                <span className="text-green-400 font-bold">New</span>
-                <span className="text-gray-300">{featuredDrama.year}</span>
-                <span className="border border-gray-500 px-1 text-xs rounded text-gray-300">{featuredDrama.status}</span>
-                {featuredDrama.genres && featuredDrama.genres.slice(0, 3).map(g => (
-                   <span key={g} className="text-gray-300">• {g}</span>
-                ))}
-              </div>
-              <p className="text-gray-300 text-sm md:text-lg line-clamp-3 md:line-clamp-none max-w-2xl drop-shadow-md">
-                {featuredDrama.description}
-              </p>
-              
-              <div className="flex items-center gap-4 pt-4">
-                <Button 
-                    size="lg" 
-                    className="gap-2 font-bold px-8 text-black bg-white hover:bg-gray-200"
-                    onClick={() => navigate(`/watch/${featuredDrama.id}`)}
-                >
-                  <Play className="h-5 w-5 fill-current" /> Play
-                </Button>
-                <Button variant="secondary" size="lg" className="gap-2 font-bold px-8" onClick={() => navigate(`/watch/${featuredDrama.id}`)}>
-                  <Info className="h-5 w-5" /> Details
-                </Button>
-              </div>
-            </div>
-          </div>
+      <div className="container mx-auto px-4 py-8">
+        <div className="text-center mb-12">
+          <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
+            Premium Chinese Drama Streaming
+          </h1>
+          <p className="text-gray-400 text-lg">
+            Watch the latest and most popular Chinese dramas
+          </p>
         </div>
-      )}
 
-      {/* Content Rows */}
-      <div className="px-4 md:px-12 -mt-24 relative z-10 space-y-12">
-        
-        {forYouDramas.length > 0 && (
-          <section>
-            <h2 className="text-xl md:text-2xl font-bold text-white mb-4 pl-1 border-l-4 border-brand-orange">For You</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
-              {forYouDramas.slice(0, 10).map((drama) => (
-                <DramaCard key={drama.id} drama={drama} />
-              ))}
+        {/* Featured Drama */}
+        {dramas.length > 0 && (
+          <div className="mb-12">
+            <div className="relative h-[400px] md:h-[500px] rounded-xl overflow-hidden">
+              <img
+                src={dramas[0].cover}
+                alt={dramas[0].bookName}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.src = 'https://placehold.co/1920x1080/1e1e1e/FFF?text=No+Poster';
+                }}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-ultra-dark via-transparent to-transparent"></div>
+              <div className="absolute bottom-0 left-0 right-0 p-8">
+                <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+                  {dramas[0].bookName}
+                </h2>
+                <div className="flex gap-4 mb-4">
+                  <span className="text-gray-300">{dramas[0].language || 'Chinese'}</span>
+                  <span className="text-gray-300">•</span>
+                  <span className="text-gray-300">{dramas[0].chapterCount} Episodes</span>
+                </div>
+                {dramas[0].tags && dramas[0].tags.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {dramas[0].tags.slice(0, 3).map((tag, index) => (
+                      <span key={index} className="px-3 py-1 bg-gray-800 text-gray-300 rounded-full text-sm">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <p className="text-gray-300 mb-6 max-w-2xl line-clamp-3">
+                  {dramas[0].introduction}
+                </p>
+                <div className="flex gap-4">
+                  <Link
+                    to={`/watch/${dramas[0].bookId}`}
+                    className="px-6 py-3 bg-brand-orange text-white rounded-lg hover:bg-opacity-90 transition"
+                  >
+                    Watch Now
+                  </Link>
+                  <button className="px-6 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition">
+                    More Info
+                  </button>
+                </div>
+              </div>
             </div>
-          </section>
-        )}
-        
-        {trendingDramas.length > 0 && (
-          <section>
-            <h2 className="text-xl md:text-2xl font-bold text-white mb-4 pl-1 border-l-4 border-brand-orange">Trending Now</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
-              {trendingDramas.slice(0, 10).map((drama) => (
-                <DramaCard key={drama.id} drama={drama} />
-              ))}
-            </div>
-          </section>
+          </div>
         )}
 
-        {latestDramas.length > 0 && (
-          <section>
-            <h2 className="text-xl md:text-2xl font-bold text-white mb-4 pl-1 border-l-4 border-brand-orange">Latest Release</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
-              {latestDramas.slice(0, 15).map((drama) => (
-                <DramaCard key={drama.id} drama={drama} />
-              ))}
-            </div>
-          </section>
-        )}
+        {/* Trending Section */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold text-white mb-6">Trending Now</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {dramas.slice(0, 12).map((drama) => (
+              <Link
+                key={drama.bookId}
+                to={`/watch/${drama.bookId}`}
+                className="group"
+              >
+                <div className="relative aspect-[2/3] rounded-lg overflow-hidden mb-2">
+                  <img
+                    src={drama.cover}
+                    alt={drama.bookName}
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                    onError={(e) => {
+                      e.currentTarget.src = 'https://placehold.co/300x450/1e1e1e/FFF?text=No+Image';
+                    }}
+                  />
+                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-opacity flex items-center justify-center">
+                    <svg className="w-12 h-12 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/>
+                    </svg>
+                  </div>
+                </div>
+                <h3 className="text-white text-sm font-medium line-clamp-2 group-hover:text-brand-orange transition">
+                  {drama.bookName}
+                </h3>
+                <p className="text-gray-400 text-xs mt-1">
+                  {drama.chapterCount} Episodes
+                </p>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        {/* Popular Section */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold text-white mb-6">Popular Dramas</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {dramas.slice(12, 24).map((drama) => (
+              <Link
+                key={drama.bookId}
+                to={`/watch/${drama.bookId}`}
+                className="group"
+              >
+                <div className="relative aspect-[2/3] rounded-lg overflow-hidden mb-2">
+                  <img
+                    src={drama.cover}
+                    alt={drama.bookName}
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                    onError={(e) => {
+                      e.currentTarget.src = 'https://placehold.co/300x450/1e1e1e/FFF?text=No+Image';
+                    }}
+                  />
+                </div>
+                <h3 className="text-white text-sm font-medium line-clamp-2 group-hover:text-brand-orange transition">
+                  {drama.bookName}
+                </h3>
+                <p className="text-gray-400 text-xs mt-1">
+                  {drama.viewCount.toLocaleString()} views
+                </p>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        {/* Recently Added */}
+        <section>
+          <h2 className="text-2xl font-bold text-white mb-6">Recently Added</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {dramas.slice(24, 36).map((drama) => (
+              <Link
+                key={drama.bookId}
+                to={`/watch/${drama.bookId}`}
+                className="group"
+              >
+                <div className="relative aspect-[2/3] rounded-lg overflow-hidden mb-2">
+                  <img
+                    src={drama.cover}
+                    alt={drama.bookName}
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                    onError={(e) => {
+                      e.currentTarget.src = 'https://placehold.co/300x450/1e1e1e/FFF?text=No+Image';
+                    }}
+                  />
+                </div>
+                <h3 className="text-white text-sm font-medium line-clamp-2 group-hover:text-brand-orange transition">
+                  {drama.bookName}
+                </h3>
+              </Link>
+            ))}
+          </div>
+        </section>
       </div>
     </div>
   );
-};
+}
