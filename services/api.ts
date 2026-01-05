@@ -6,6 +6,7 @@ const BASE_URL = '/api';
 // Helper: Fix incomplete URLs
 const fixUrl = (url?: string) => {
     if (!url) return undefined;
+    if (url === 'undefined' || url === 'null') return undefined;
     
     // Handle standard protocol-less URLs
     if (url.startsWith('//')) return `https:${url}`;
@@ -44,19 +45,18 @@ const fetchFromApi = async (endpoint: string, params: Record<string, string> = {
     });
 
     if (!response.ok) {
-        // Silent fail for 404/400 to allow fallback
         return null;
     }
     
     const json = await response.json();
 
-    // LOGIC CHECK: Relaxed check to handle string "200"
+    // Relaxed check
     if (json.code !== undefined && json.code != 200 && json.code != 0) {
         console.warn(`API Logic Error: ${json.msg || 'Unknown'}`, json);
         return null; 
     }
     
-    // Validation: Handle various API response structures
+    // Validation
     const result = json.data || json.result || json;
     
     if (!result) return null;
@@ -72,7 +72,7 @@ const fetchFromApi = async (endpoint: string, params: Record<string, string> = {
 
 // Adapter: Strict mapping for api.sansekai.my.id response structure
 const normalizeDrama = (item: any): Drama => {
-  // ID Mapping: Priority to bookId
+  // ID Mapping
   const id = item.bookId?.toString() || item.book_id?.toString() || item.id?.toString() || crypto.randomUUID();
   
   // Title Mapping: STRICT priority to bookName
@@ -80,7 +80,7 @@ const normalizeDrama = (item: any): Drama => {
   
   // Image Mapping: STRICT priority to cover
   const rawThumb = item.cover || item.coverWap || item.poster || item.thumb || item.thumbnail || item.image;
-  const rawPoster = item.cover || item.coverWap || item.poster || item.image;
+  const rawPoster = item.cover || item.poster || item.image;
   
   // Description Mapping: STRICT priority to introduction
   const description = item.introduction || item.intro || item.synopsis || item.description || 'No synopsis available.';
@@ -121,35 +121,30 @@ const normalizeDrama = (item: any): Drama => {
 const normalizeEpisode = (item: any, dramaId: string, index?: number): Episode => {
   let epNum = 0;
   
-  // 1. Try to extract explicit number from Title/ChapterName (e.g., "EP 1" -> 1)
+  // 1. Parsing Episode Number
   const name = item.title || item.chapterName || item.name || '';
   const match = name.match(/(?:EP|Episode|Chapter)\s*(\d+)/i) || name.match(/^(\d+)$/);
   
   if (match) {
     epNum = parseInt(match[1], 10);
   } else {
-    // 2. Fallback to properties
     epNum = parseInt(item.episode || item.chapterIndex || 0);
-    
-    // 3. Fix 0-based index if no name match found
+    // Fix 0-based index if no name match found
     if (epNum === 0 && (item.chapterIndex === 0 || index === 0)) {
        epNum = 1;
     }
   }
 
-  // DEFAULT STREAM EXTRACTION LOGIC
+  // 2. Stream URL Extraction
   let streamUrl = item.url || item.stream_url || '';
 
-  // LOGIC: Parse cdnList to find 720p mp4
+  // Logic: Parse cdnList to find 720p mp4
   if (!streamUrl && Array.isArray(item.cdnList) && item.cdnList.length > 0) {
-      // 1. Get the default CDN or the first one
       const cdn = item.cdnList.find((c: any) => c.isDefault === 1) || item.cdnList[0];
       
       if (cdn && Array.isArray(cdn.videoPathList) && cdn.videoPathList.length > 0) {
-          // 2. Find Quality 720 specifically (as requested)
           let bestVideo = cdn.videoPathList.find((v: any) => v.quality === 720);
           
-          // 3. Fallback: 1080 if 720 not found, then any default
           if (!bestVideo) {
              bestVideo = cdn.videoPathList.find((v: any) => v.quality === 1080);
           }
@@ -163,8 +158,9 @@ const normalizeEpisode = (item: any, dramaId: string, index?: number): Episode =
       }
   }
 
-  // THUMBNAIL LOGIC: Prioritize 'cover'
-  const epThumb = item.cover || item.thumbnail || item.image;
+  // 3. THUMBNAIL LOGIC: Prioritize 'cover'
+  // Note: We return undefined/empty if no cover found, so WatchPage can fallback to Drama Cover
+  const epThumb = fixUrl(item.cover || item.thumbnail || item.image);
 
   return {
     id: item.id?.toString() || item.chapterId?.toString() || `ep-${dramaId}-${epNum}`,
@@ -172,7 +168,7 @@ const normalizeEpisode = (item: any, dramaId: string, index?: number): Episode =
     episodeNumber: epNum,
     title: item.title || item.chapterName || `Episode ${epNum}`,
     streamUrl: fixUrl(streamUrl) || '', 
-    thumbnail: fixUrl(epThumb)
+    thumbnail: epThumb
   };
 };
 
@@ -245,6 +241,8 @@ const getById = async (id: string): Promise<Drama | undefined> => {
   }
 
   if (!data) return undefined;
+  // If api returns { data: { ... } }, fetchFromApi unwraps it. 
+  // But if it returns an array of 1 item, unwrap it here.
   const item = Array.isArray(data) ? data[0] : data;
   return normalizeDrama(item);
 };
