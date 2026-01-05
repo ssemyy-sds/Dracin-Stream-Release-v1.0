@@ -6,20 +6,19 @@ export default async function handler(request, response) {
   const PRIMARY_API = process.env.UPSTREAM_API_URL;
   const SECONDARY_API = 'https://api.gimita.id';
 
-  // FIX: [DEP0169] DeprecationWarning.
-  // We manually parse the URL using WHATWG API to avoid accessing 'request.query'
-  // which might trigger legacy url.parse() internally in the serverless environment.
-  // We use a dummy base 'http://n' because request.url is relative in Vercel.
-  const requestUrl = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
-  const searchParams = requestUrl.searchParams;
+  // FIX: [DEP0169] DeprecationWarning mitigation.
+  // Instead of using `new URL(request.url, base)` which might trigger internal legacy parsing
+  // on the request object in some Vercel runtimes, we strictly use string splitting.
+  const urlParts = (request.url || '').split('?');
+  const pathname = urlParts[0];
+  const queryString = urlParts.length > 1 ? urlParts[1] : '';
+  const searchParams = new URLSearchParams(queryString);
 
   let path = searchParams.get('path');
   const provider = searchParams.get('provider');
   
-  // Robust path extraction if not passed via rewrites (e.g. direct calls)
+  // Robust path extraction
   if (!path) {
-    // Manually split from the pathname to avoid legacy parsing issues
-    const pathname = requestUrl.pathname;
     const splitPath = pathname.split('/api/');
     if (splitPath.length > 1) {
       path = splitPath[1];
@@ -37,9 +36,10 @@ export default async function handler(request, response) {
   // Determine Base URL
   const baseUrl = (provider === 'secondary' ? SECONDARY_API : PRIMARY_API).replace(/\/$/, '');
   
+  // Clean path
   const cleanPathParam = Array.isArray(path) ? path.join('/') : path;
   
-  // Construct target URL using WHATWG API
+  // Construct target URL
   const targetUrl = new URL(`${baseUrl}/${cleanPathParam}`);
   
   // Forward all other query parameters
@@ -64,9 +64,7 @@ export default async function handler(request, response) {
     if (contentType && contentType.includes('application/json')) {
       data = await apiResponse.json();
     } else {
-      const text = await apiResponse.text();
-      // Silently fail for non-json to avoid log spam, return empty data
-      // console.warn(`Upstream returned non-JSON for ${path}`);
+      // Silently return empty on non-JSON to allow client fallback logic to proceed
       return response.status(200).json({ data: [], error: 'Upstream returned non-JSON' });
     }
     
