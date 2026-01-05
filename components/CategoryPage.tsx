@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { dramaService } from '../services/api';
@@ -55,7 +56,7 @@ export const CategoryPage: React.FC = () => {
       ) : dramas.length > 0 ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
           {dramas.map(drama => (
-            <DramaCard key={drama.id} drama={drama} />
+            <DramaCard key={drama.bookId} drama={drama} />
           ))}
         </div>
       ) : (

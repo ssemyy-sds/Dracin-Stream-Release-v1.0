@@ -13,9 +13,7 @@ export const WatchPage: React.FC = () => {
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
   
-  const [activeStreamUrl, setActiveStreamUrl] = useState<string>('');
   const [loading, setLoading] = useState(true);
-  const [loadingStream, setLoadingStream] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -25,26 +23,32 @@ export const WatchPage: React.FC = () => {
       setError(null);
       
       try {
-          // 1. Fetch Drama Details (Metadata)
+          console.log("[WatchPage] Fetching detail for:", id);
+          // 1. Fetch Drama Details (Nested Response handled in API service)
           const dramaData = await dramaService.getById(id);
+          
           if (!dramaData) {
-              setError("Drama not found or API error.");
+              console.error("[WatchPage] Drama data is null");
+              setError("Drama not found.");
               setLoading(false);
               return;
           }
           setDrama(dramaData);
 
-          // 2. Fetch Episodes
+          // 2. Fetch Episodes (Direct Array handled in API service)
           const episodeData = await dramaService.getEpisodes(id);
+          console.log("[WatchPage] Episodes loaded:", episodeData.length);
+          
           setEpisodes(episodeData);
           
           if (episodeData.length > 0) {
             setCurrentEpisode(episodeData[0]);
           } else {
-              setError("No episodes available for this drama.");
+             // If API returns no episodes, maybe show a "Coming Soon" or handle error
+             console.warn("[WatchPage] No episodes found in array");
           }
       } catch (e) {
-          console.error("Failed to load content", e);
+          console.error("[WatchPage] Critical Error:", e);
           setError("Failed to load content.");
       } finally {
           setLoading(false);
@@ -52,39 +56,6 @@ export const WatchPage: React.FC = () => {
     };
     fetchData();
   }, [id]);
-
-  // Effect: Resolve Stream URL
-  useEffect(() => {
-      const fetchStream = async () => {
-          if (!currentEpisode || !drama) return;
-
-          // PRIORITY 1: Check if streamUrl is already present in the episode object
-          if (currentEpisode.streamUrl && currentEpisode.streamUrl.length > 10) {
-              console.log("Using direct stream from list:", currentEpisode.streamUrl);
-              setActiveStreamUrl(currentEpisode.streamUrl);
-              return;
-          }
-
-          // PRIORITY 2: Fetch on-demand (Fallback)
-          setLoadingStream(true);
-          setActiveStreamUrl('');
-
-          try {
-              const url = await dramaService.getStreamUrl(drama.id, currentEpisode.episodeNumber);
-              if (url) {
-                  setActiveStreamUrl(url);
-              } else {
-                  console.warn("No stream URL found for", drama.id, currentEpisode.episodeNumber);
-              }
-          } catch (e) {
-              console.error("Error fetching stream URL", e);
-          } finally {
-              setLoadingStream(false);
-          }
-      };
-
-      fetchStream();
-  }, [currentEpisode, drama]);
 
   if (loading) {
     return (
@@ -107,26 +78,24 @@ export const WatchPage: React.FC = () => {
       );
   }
 
+  // Determine Video URL: Priority to currentEpisode.videoUrl extracted from cdnList
+  const activeStreamUrl = currentEpisode?.videoUrl || '';
+
   return (
     <div className="min-h-screen bg-brand-black pt-16">
       {/* Video Section */}
       <div className="w-full bg-black shadow-2xl relative aspect-video md:aspect-auto md:h-[60vh] lg:h-[70vh]">
         <div className="w-full h-full mx-auto">
-           {loadingStream ? (
-               <div className="w-full h-full flex flex-col items-center justify-center bg-gray-900 text-white gap-3">
-                   <div className="w-10 h-10 border-4 border-brand-orange border-t-transparent rounded-full animate-spin"></div>
-                   <p className="text-sm font-medium">Loading Episode {currentEpisode?.episodeNumber}...</p>
-               </div>
-           ) : activeStreamUrl ? (
+           {activeStreamUrl ? (
               <VideoPlayer 
                 src={activeStreamUrl} 
-                poster={drama.poster}
+                poster={drama.cover}
               />
            ) : (
                <div className="w-full h-full bg-gray-900 flex flex-col items-center justify-center text-gray-500 gap-2 p-4 text-center">
                    <AlertCircle className="h-10 w-10 text-gray-600" />
-                   <p className="font-medium text-white">Stream not available</p>
-                   <p className="text-xs">Server might be busy or link expired. Try another episode.</p>
+                   <p className="font-medium text-white">Stream not available for {currentEpisode?.chapterName}</p>
+                   <p className="text-xs">Please try another episode.</p>
                </div>
            )}
         </div>
@@ -138,7 +107,8 @@ export const WatchPage: React.FC = () => {
         {/* Left Col: Details */}
         <div className="lg:col-span-2 space-y-6">
             <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">{drama.title}</h1>
+                {/* CORRECT FIELD: bookName */}
+                <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">{drama.bookName}</h1>
                 <div className="flex items-center gap-4 text-sm text-gray-400 mb-4">
                     <span>{drama.year}</span>
                     <span className="border border-gray-600 px-1 rounded text-xs">{drama.status}</span>
@@ -151,11 +121,12 @@ export const WatchPage: React.FC = () => {
                 
                 {currentEpisode && (
                     <div className="mb-6 p-4 bg-white/5 rounded-lg border border-white/10">
+                        {/* CORRECT FIELD: chapterName */}
                         <h2 className="text-lg font-semibold text-brand-orange mb-1">
-                            {currentEpisode.title}
+                            {currentEpisode.chapterName}
                         </h2>
                         <p className="text-gray-400 text-sm">
-                            {loadingStream ? 'Loading source...' : 'Now Playing'}
+                            Now Playing
                         </p>
                     </div>
                 )}
@@ -174,7 +145,8 @@ export const WatchPage: React.FC = () => {
 
                 <div className="text-gray-300 leading-relaxed">
                     <h3 className="text-white font-bold mb-2">Synopsis</h3>
-                    <p>{drama.description}</p>
+                    {/* CORRECT FIELD: introduction */}
+                    <p>{drama.introduction}</p>
                 </div>
             </div>
         </div>
@@ -185,33 +157,34 @@ export const WatchPage: React.FC = () => {
             <div className="flex flex-col gap-2 max-h-[600px] overflow-y-auto no-scrollbar pr-2">
                 {episodes.map((ep) => (
                     <div 
-                        key={ep.id}
+                        key={ep.chapterId}
                         onClick={() => setCurrentEpisode(ep)}
                         className={`flex gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
-                            currentEpisode?.id === ep.id 
+                            currentEpisode?.chapterId === ep.chapterId 
                             ? 'bg-white/10 border-l-4 border-brand-orange' 
                             : 'hover:bg-white/5 bg-transparent'
                         }`}
                     >
                         <div className="relative w-32 aspect-video flex-shrink-0 bg-gray-800 rounded overflow-hidden">
+                            {/* Fallback to drama cover if episode cover missing */}
                             <img 
-                                src={ep.thumbnail || drama.thumbnail} 
+                                src={ep.cover || drama.cover} 
                                 className="w-full h-full object-cover opacity-70" 
-                                alt={ep.title} 
+                                alt={ep.chapterName} 
                                 loading="lazy" 
                             />
-                            {currentEpisode?.id === ep.id && (
+                            {currentEpisode?.chapterId === ep.chapterId && (
                                 <div className="absolute inset-0 flex items-center justify-center bg-black/40">
                                     <PlayCircle className="h-8 w-8 text-brand-orange fill-black" />
                                 </div>
                             )}
                         </div>
                         <div className="flex flex-col justify-center">
-                            <h4 className={`font-medium text-sm ${currentEpisode?.id === ep.id ? 'text-brand-orange' : 'text-white'}`}>
-                                Episode {ep.episodeNumber}
+                            <h4 className={`font-medium text-sm ${currentEpisode?.chapterId === ep.chapterId ? 'text-brand-orange' : 'text-white'}`}>
+                                {ep.chapterName}
                             </h4>
                             <p className="text-xs text-gray-400 line-clamp-2">
-                                {drama.title}
+                                {drama.bookName}
                             </p>
                         </div>
                     </div>

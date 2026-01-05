@@ -23,7 +23,6 @@ export const SearchPage: React.FC = () => {
       try {
         setLoading(true);
         setError(null);
-        // Use unified service
         const data = await dramaService.search(query);
         setResults(data);
       } catch (err: any) {
@@ -69,7 +68,7 @@ export const SearchPage: React.FC = () => {
         {!loading && results.length > 0 && (
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {results.map((drama) => (
-              <DramaCard key={drama.id} drama={drama} />
+              <DramaCard key={drama.bookId} drama={drama} />
             ))}
           </div>
         )}

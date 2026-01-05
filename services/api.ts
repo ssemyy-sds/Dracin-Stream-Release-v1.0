@@ -3,21 +3,21 @@ import { Drama, Episode } from '../types';
 
 const BASE_URL = '/api';
 
-// Helper: Fix incomplete URLs
+// --- Helper Functions ---
+
 const fixUrl = (url?: string) => {
-    if (!url) return undefined;
-    if (url === 'undefined' || url === 'null') return undefined;
+    if (!url || url === 'undefined' || url === 'null') return '';
     
     // Handle standard protocol-less URLs
     if (url.startsWith('//')) return `https:${url}`;
     
-    // Handle specific relative paths often found in scraper APIs
+    // Handle relative paths
     if (url.startsWith('/uploads') || url.startsWith('/images')) {
-       return url; 
+       return `${window.location.origin}${url}`; 
     }
 
     if (!url.startsWith('http')) {
-        // Simple heuristic: if it looks like a domain, prepend https
+        // Heuristic: if it looks like a domain
         if (url.includes('.') && !url.includes(' ')) return `https://${url}`;
         return url;
     }
@@ -25,321 +25,154 @@ const fixUrl = (url?: string) => {
     return url.replace('http://', 'https://');
 };
 
-const fetchFromApi = async (endpoint: string, params: Record<string, string> = {}, provider: 'primary' | 'secondary' = 'primary') => {
-  // Remove leading slash
-  const cleanEndpoint = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
-  
-  const url = new URL(`${window.location.origin}${BASE_URL}/${cleanEndpoint}`);
-  
-  // Add params
-  Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
-  
-  // Add provider param for the proxy to switch targets
-  if (provider === 'secondary') {
-      url.searchParams.append('provider', 'secondary');
-  }
-  
-  try {
-    const response = await fetch(url.toString(), {
-      headers: { 'Accept': 'application/json' }
-    });
+const extractVideoUrl = (cdnList: any[]): string => {
+    if (!Array.isArray(cdnList) || cdnList.length === 0) return '';
 
-    if (!response.ok) {
+    // 1. Get Default CDN or first one
+    const cdn = cdnList.find((c) => c.isDefault === 1) || cdnList[0];
+    
+    if (!cdn || !Array.isArray(cdn.videoPathList)) return '';
+
+    // 2. Find Quality 720p (preferred)
+    let bestVideo = cdn.videoPathList.find((v: any) => v.quality === 720);
+    
+    // 3. Fallback to 1080p or any default
+    if (!bestVideo) bestVideo = cdn.videoPathList.find((v: any) => v.quality === 1080);
+    if (!bestVideo) bestVideo = cdn.videoPathList.find((v: any) => v.isDefault === 1);
+    if (!bestVideo) bestVideo = cdn.videoPathList[0];
+
+    return fixUrl(bestVideo?.videoPath);
+};
+
+// --- Normalization ---
+
+const normalizeDrama = (item: any): Drama => {
+    // Determine ID
+    const id = item.bookId?.toString() || item.book_id?.toString() || item.id?.toString() || crypto.randomUUID();
+    
+    // Determine Cover
+    const cover = fixUrl(item.cover || item.coverWap || item.poster || item.image || item.thumbnail);
+    const PLACEHOLDER = 'https://placehold.co/300x450/1e1e1e/FFF?text=No+Cover';
+
+    // Determine Genres
+    let genres = ['Drama'];
+    if (Array.isArray(item.tags) && item.tags.length > 0) genres = item.tags;
+    else if (Array.isArray(item.labels) && item.labels.length > 0) genres = item.labels;
+    else if (item.category) genres = [item.category];
+
+    return {
+        bookId: id,
+        bookName: item.bookName || item.book_name || item.title || item.name || 'Unknown Title',
+        cover: cover || PLACEHOLDER,
+        introduction: item.introduction || item.intro || item.synopsis || item.description || 'No synopsis available.',
+        
+        rating: parseFloat(item.score || item.rating || '9.0'),
+        genres: genres,
+        status: item.status || (item.updateStatus === 1 ? 'Completed' : 'Ongoing'),
+        year: parseInt(item.year || item.shelfTime || new Date().getFullYear()),
+        latestEpisode: parseInt(item.chapterCount || item.latest_episode || '0'),
+        viewCount: item.viewCount
+    };
+};
+
+const normalizeEpisode = (item: any): Episode => {
+    return {
+        chapterId: item.chapterId?.toString() || crypto.randomUUID(),
+        chapterIndex: parseInt(item.chapterIndex || item.episode || 0),
+        chapterName: item.chapterName || item.title || `Episode ${item.chapterIndex}`,
+        cover: fixUrl(item.cover || item.image),
+        videoUrl: extractVideoUrl(item.cdnList || []) || fixUrl(item.url || item.stream_url)
+    };
+};
+
+// --- API Fetcher ---
+
+const fetchFromApi = async (endpoint: string, params: Record<string, string> = {}, provider: 'primary' | 'secondary' = 'primary') => {
+    const url = new URL(`${window.location.origin}${BASE_URL}/${endpoint.replace(/^\//, '')}`);
+    Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
+    if (provider === 'secondary') url.searchParams.append('provider', 'secondary');
+
+    try {
+        const res = await fetch(url.toString());
+        if (!res.ok) return null;
+        const json = await res.json();
+        return json;
+    } catch (e) {
+        console.error(`[API] Error fetching ${endpoint}:`, e);
         return null;
     }
-    
-    const json = await response.json();
+};
 
-    // Relaxed check
-    if (json.code !== undefined && json.code != 200 && json.code != 0) {
-        console.warn(`API Logic Error: ${json.msg || 'Unknown'}`, json);
-        return null; 
+// --- Service Implementation ---
+
+const getById = async (bookId: string): Promise<Drama | undefined> => {
+    // 1. Fetch Detail (Target: /detail?bookId=...)
+    const json = await fetchFromApi('detail', { bookId });
+    
+    // CRITICAL: Handle Nested Structure { data: { book: ... } }
+    if (json && json.data && json.data.book) {
+        return normalizeDrama(json.data.book);
     }
     
-    // Validation
-    const result = json.data || json.result || json;
-    
-    if (!result) return null;
-    if (Array.isArray(result) && result.length === 0) return null;
-    if (typeof result === 'object' && Object.keys(result).length === 0) return null;
-    
-    return result;
-  } catch (error) {
-    console.error("Fetch Error:", error);
-    return null;
-  }
-};
-
-// Adapter: Strict mapping for api.sansekai.my.id response structure
-const normalizeDrama = (item: any): Drama => {
-  // ID Mapping
-  const id = item.bookId?.toString() || item.book_id?.toString() || item.id?.toString() || crypto.randomUUID();
-  
-  // Title Mapping: STRICT priority to bookName
-  const title = item.bookName || item.book_name || item.title || item.name || 'Unknown Title';
-  
-  // Image Mapping: STRICT priority to cover
-  const rawThumb = item.cover || item.coverWap || item.poster || item.thumb || item.thumbnail || item.image;
-  const rawPoster = item.cover || item.poster || item.image;
-  
-  // Description Mapping: STRICT priority to introduction
-  const description = item.introduction || item.intro || item.synopsis || item.description || 'No synopsis available.';
-
-  // Genres/Tags Mapping
-  let genres = ['Drama'];
-  if (Array.isArray(item.tags) && item.tags.length > 0) {
-      genres = item.tags;
-  } else if (Array.isArray(item.genres)) {
-      genres = item.genres;
-  } else if (item.category) {
-      genres = [item.category];
-  }
-
-  // Episode Count
-  const countRaw = item.chapterCount || item.chapter_count || item.total_chapter || item.latest_episode || '0';
-  const latestEpisode = parseInt(String(countRaw), 10);
-
-  // Placeholders
-  const PLACEHOLDER_THUMB = 'https://placehold.co/300x450/1e1e1e/FFF?text=No+Image';
-  const PLACEHOLDER_POSTER = 'https://placehold.co/1920x1080/1e1e1e/FFF?text=No+Poster';
-
-  return {
-    id: id,
-    title: title,
-    thumbnail: fixUrl(rawThumb) || PLACEHOLDER_THUMB,
-    poster: fixUrl(rawPoster) || PLACEHOLDER_POSTER,
-    rating: parseFloat(item.rating || item.score || '0') || 9.0,
-    genres: genres,
-    description: description,
-    status: item.status || 'Ongoing',
-    year: parseInt(item.year) || new Date().getFullYear(),
-    latestEpisode: latestEpisode,
-    streamUrl: fixUrl(item.stream_url)
-  };
-};
-
-const normalizeEpisode = (item: any, dramaId: string, index?: number): Episode => {
-  let epNum = 0;
-  
-  // 1. Parsing Episode Number
-  const name = item.title || item.chapterName || item.name || '';
-  const match = name.match(/(?:EP|Episode|Chapter)\s*(\d+)/i) || name.match(/^(\d+)$/);
-  
-  if (match) {
-    epNum = parseInt(match[1], 10);
-  } else {
-    epNum = parseInt(item.episode || item.chapterIndex || 0);
-    // Fix 0-based index if no name match found
-    if (epNum === 0 && (item.chapterIndex === 0 || index === 0)) {
-       epNum = 1;
+    // Fallback: Check if it's flat structure or secondary provider
+    if (json && (json.bookId || json.bookName)) {
+        return normalizeDrama(json);
     }
-  }
 
-  // 2. Stream URL Extraction
-  let streamUrl = item.url || item.stream_url || '';
-
-  // Logic: Parse cdnList to find 720p mp4
-  if (!streamUrl && Array.isArray(item.cdnList) && item.cdnList.length > 0) {
-      const cdn = item.cdnList.find((c: any) => c.isDefault === 1) || item.cdnList[0];
-      
-      if (cdn && Array.isArray(cdn.videoPathList) && cdn.videoPathList.length > 0) {
-          let bestVideo = cdn.videoPathList.find((v: any) => v.quality === 720);
-          
-          if (!bestVideo) {
-             bestVideo = cdn.videoPathList.find((v: any) => v.quality === 1080);
-          }
-          if (!bestVideo) {
-             bestVideo = cdn.videoPathList[0];
-          }
-
-          if (bestVideo && bestVideo.videoPath) {
-              streamUrl = bestVideo.videoPath;
-          }
-      }
-  }
-
-  // 3. THUMBNAIL LOGIC: Prioritize 'cover'
-  const epThumb = fixUrl(item.cover || item.thumbnail || item.image);
-
-  return {
-    id: item.id?.toString() || item.chapterId?.toString() || `ep-${dramaId}-${epNum}`,
-    dramaId: dramaId,
-    episodeNumber: epNum,
-    title: item.title || item.chapterName || `Episode ${epNum}`,
-    streamUrl: fixUrl(streamUrl) || '', 
-    thumbnail: epThumb
-  };
+    return undefined;
 };
 
-// --- Explicit Interface Definition ---
-export interface DramaApiService {
-  getWithFallback(primaryEndpoint: string): Promise<Drama[]>;
-  getForYou(): Promise<Drama[]>;
-  getLatest(): Promise<Drama[]>;
-  getTrending(): Promise<Drama[]>;
-  getVip(): Promise<Drama[]>;
-  getDubIndo(): Promise<Drama[]>;
-  getByCategory(category: string): Promise<Drama[]>;
-  getById(id: string): Promise<Drama | undefined>;
-  search(query: string): Promise<Drama[]>;
-  getEpisodes(dramaId: string): Promise<Episode[]>;
-  getStreamUrl(bookId: string, episode: number): Promise<string | null>;
-  getRandom(): Promise<Drama[]>;
-}
+const getEpisodes = async (bookId: string): Promise<Episode[]> => {
+    // 1. Fetch Episodes (Target: /allepisode?bookId=...)
+    const json = await fetchFromApi('allepisode', { bookId });
 
-// --- Standalone Functions ---
-
-const getWithFallback = async (primaryEndpoint: string): Promise<Drama[]> => {
-    let data = await fetchFromApi(primaryEndpoint);
-    if (data && Array.isArray(data) && data.length > 0) {
-        return data.map(normalizeDrama);
+    // CRITICAL: Handle Direct Array Structure [...]
+    let rawList = [];
+    if (Array.isArray(json)) {
+        rawList = json;
+    } else if (json && Array.isArray(json.data)) {
+        rawList = json.data;
     }
-    // Fallback to secondary
-    data = await fetchFromApi('search/dramabox', { action: 'home' }, 'secondary');
-    if (data && Array.isArray(data) && data.length > 0) {
-        return data.map(normalizeDrama);
-    }
-    return [];
-};
 
-const getForYou = async (): Promise<Drama[]> => getWithFallback('/foryou');
-const getLatest = async (): Promise<Drama[]> => getWithFallback('/latest');
-const getTrending = async (): Promise<Drama[]> => getWithFallback('/trending');
-const getVip = async (): Promise<Drama[]> => getWithFallback('/vip');
-const getDubIndo = async (): Promise<Drama[]> => getWithFallback('/dubindo');
-
-const getByCategory = async (category: string): Promise<Drama[]> => {
-  switch (category.toLowerCase()) {
-    case 'foryou': return getForYou();
-    case 'trending': return getTrending();
-    case 'latest': return getLatest();
-    case 'vip': return getVip();
-    case 'dubindo': return getDubIndo();
-    default: return getTrending();
-  }
-};
-
-const getById = async (id: string): Promise<Drama | undefined> => {
-  // STRICT: Call /detail?bookId=[id]
-  let data = await fetchFromApi('/detail', { bookId: id });
-  
-  if (!data) {
-      // Fallback
-      data = await fetchFromApi('search/dramabox', { action: 'detail', book_id: id }, 'secondary');
-  }
-
-  // Fallback 3: Search
-  if (!data) {
-       const searchData = await fetchFromApi('search/dramabox', { action: 'search', query: id }, 'secondary');
-       if (searchData && Array.isArray(searchData) && searchData.length > 0) {
-          const exact = searchData.find((d: any) => 
-            (d.bookId?.toString() === id) || (d.id?.toString() === id)
-          );
-          data = exact || searchData[0];
-       }
-  }
-
-  if (!data) return undefined;
-  // If api returns { data: { ... } }, fetchFromApi unwraps it. 
-  // But if it returns an array of 1 item, unwrap it here.
-  const item = Array.isArray(data) ? data[0] : data;
-  return normalizeDrama(item);
-};
-
-const search = async (query: string): Promise<Drama[]> => {
-  if (!query) return [];
-  let data = await fetchFromApi('/search', { query: query });
-  
-  if (!data || !Array.isArray(data) || data.length === 0) {
-      data = await fetchFromApi('search/dramabox', { action: 'search', query: query }, 'secondary');
-  }
-
-  if (!data || !Array.isArray(data)) return [];
-  return data.map(normalizeDrama);
-};
-
-const getEpisodes = async (dramaId: string): Promise<Episode[]> => {
-  // 1. Primary: /allepisode?bookId=[id]
-  let data = await fetchFromApi('/allepisode', { bookId: dramaId });
-  
-  let episodeList: Episode[] = [];
-
-  if (data && Array.isArray(data) && data.length > 0) {
-      episodeList = data.map((item: any) => normalizeEpisode(item, dramaId));
-  } 
-  // 2. Secondary: Gimita Chapter List
-  else {
-      const secData = await fetchFromApi('search/dramabox', { action: 'chapter_list', book_id: dramaId }, 'secondary');
-      if (secData && Array.isArray(secData) && secData.length > 0) {
-          episodeList = secData.map((item: any) => normalizeEpisode(item, dramaId));
-      }
-  }
-
-  // 3. Fallback: Virtual Episodes
-  if (episodeList.length === 0) {
-      const detailData = await getById(dramaId);
-      if (detailData && detailData.latestEpisode && detailData.latestEpisode > 0) {
-          for (let i = 1; i <= detailData.latestEpisode; i++) {
-              episodeList.push({
-                  id: `virt-${dramaId}-${i}`,
-                  dramaId: dramaId,
-                  episodeNumber: i,
-                  title: `Episode ${i}`,
-                  streamUrl: '', 
-                  thumbnail: detailData.thumbnail
-              });
-          }
-      }
-  }
-
-  // Filter out Episode 0 and sort
-  return episodeList
-    .filter(ep => ep.episodeNumber > 0)
-    .sort((a, b) => a.episodeNumber - b.episodeNumber);
+    // Map and Filter
+    const episodes = rawList.map(normalizeEpisode).filter(ep => ep.chapterIndex > 0);
+    return episodes.sort((a, b) => a.chapterIndex - b.chapterIndex);
 };
 
 const getStreamUrl = async (bookId: string, episode: number): Promise<string | null> => {
-    // 1. Try Secondary API
-    let data = await fetchFromApi('search/dramabox', {
-        action: 'stream',
-        book_id: bookId,
-        episode: episode.toString()
-    }, 'secondary');
-
-    if (data && data.url) {
-        return fixUrl(data.url) || null;
-    }
-    
-    // 2. Try Primary API fallback
-    data = await fetchFromApi('/play', { 
-        bookId: bookId, 
-        episode: episode.toString() 
-    });
-
-    if (data && data.url) {
-        return fixUrl(data.url) || null;
-    }
-
+    // Since we extract videoUrl in getEpisodes, this might be redundant, 
+    // but kept for specific 'play' endpoint if needed.
+    const json = await fetchFromApi('play', { bookId, episode: episode.toString() });
+    if (json && json.url) return fixUrl(json.url);
     return null;
 };
 
-const getRandom = async (): Promise<Drama[]> => {
-  const data = await fetchFromApi('/randomdrama');
-  if (!data || !Array.isArray(data)) return getTrending();
-  return data.map(normalizeDrama);
+const getTrending = async (): Promise<Drama[]> => {
+    const json = await fetchFromApi('trending'); // or /search/dramabox action=home
+    // Handle potential response variations
+    const list = Array.isArray(json) ? json : (json?.data || []);
+    return list.map(normalizeDrama);
 };
 
-export const dramaService: DramaApiService = {
-  getWithFallback,
-  getForYou,
-  getLatest,
-  getTrending,
-  getVip,
-  getDubIndo,
-  getByCategory,
-  getById,
-  search,
-  getEpisodes,
-  getStreamUrl,
-  getRandom
+// Generic search/category wrapper
+const getList = async (endpoint: string, params: any = {}): Promise<Drama[]> => {
+    const json = await fetchFromApi(endpoint, params);
+    const list = Array.isArray(json) ? json : (json?.data || []);
+    return list.map(normalizeDrama);
+};
+
+export const dramaService = {
+    getById,
+    getEpisodes,
+    getStreamUrl,
+    getTrending,
+    search: (q: string) => getList('search', { query: q }),
+    getForYou: () => getList('foryou'),
+    getLatest: () => getList('latest'),
+    getVip: () => getList('vip'),
+    getDubIndo: () => getList('dubindo'),
+    getByCategory: (cat: string) => {
+        if (cat === 'trending') return getTrending();
+        return getList(cat); // simplified
+    }
 };

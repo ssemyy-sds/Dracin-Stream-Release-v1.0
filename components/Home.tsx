@@ -14,7 +14,6 @@ export const Home: React.FC = () => {
     async function loadDramas() {
       try {
         setLoading(true);
-        // Use the unified service
         const data = await dramaService.getTrending();
         setDramas(data);
       } catch (err: any) {
@@ -75,23 +74,22 @@ export const Home: React.FC = () => {
           <div className="mb-12">
             <div className="relative h-[400px] md:h-[500px] rounded-xl overflow-hidden group">
               <img
-                src={featuredDrama.poster || featuredDrama.thumbnail}
-                alt={featuredDrama.title}
+                src={featuredDrama.cover}
+                alt={featuredDrama.bookName}
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  e.currentTarget.src = 'https://placehold.co/1920x1080/1e1e1e/FFF?text=No+Poster';
+                  e.currentTarget.src = 'https://placehold.co/1920x1080/1e1e1e/FFF?text=No+Cover';
                 }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
               <div className="absolute bottom-0 left-0 right-0 p-8">
                 <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-                  {featuredDrama.title}
+                  {featuredDrama.bookName}
                 </h2>
                 <div className="flex gap-4 mb-4 text-sm md:text-base">
                   <span className="text-gray-300">{featuredDrama.status}</span>
                   <span className="text-gray-300">•</span>
                   <span className="text-gray-300">{featuredDrama.latestEpisode} Episodes</span>
-                  <span className="text-gray-300">•</span>
                   <span className="text-brand-orange font-bold">⭐ {featuredDrama.rating}</span>
                 </div>
                 {featuredDrama.genres.length > 0 && (
@@ -104,11 +102,11 @@ export const Home: React.FC = () => {
                   </div>
                 )}
                 <p className="text-gray-300 mb-6 max-w-2xl line-clamp-3">
-                  {featuredDrama.description}
+                  {featuredDrama.introduction}
                 </p>
                 <div className="flex gap-4">
                   <Link
-                    to={`/watch/${featuredDrama.id}`}
+                    to={`/watch/${featuredDrama.bookId}`}
                     className="px-8 py-3 bg-brand-orange text-white rounded-lg hover:bg-orange-600 transition font-bold"
                   >
                     Watch Now
@@ -124,7 +122,7 @@ export const Home: React.FC = () => {
           <h2 className="text-2xl font-bold text-white mb-6 border-l-4 border-brand-orange pl-3">Trending Now</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {dramas.slice(0, 12).map((drama) => (
-              <DramaCard key={drama.id} drama={drama} />
+              <DramaCard key={drama.bookId} drama={drama} />
             ))}
           </div>
         </section>
@@ -134,7 +132,7 @@ export const Home: React.FC = () => {
           <h2 className="text-2xl font-bold text-white mb-6 border-l-4 border-brand-orange pl-3">Popular Dramas</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {dramas.slice(12, 24).map((drama) => (
-               <DramaCard key={drama.id} drama={drama} />
+               <DramaCard key={drama.bookId} drama={drama} />
             ))}
           </div>
         </section>
@@ -144,7 +142,7 @@ export const Home: React.FC = () => {
           <h2 className="text-2xl font-bold text-white mb-6 border-l-4 border-brand-orange pl-3">Recently Added</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {dramas.slice(24, 36).map((drama) => (
-               <DramaCard key={drama.id} drama={drama} />
+               <DramaCard key={drama.bookId} drama={drama} />
             ))}
           </div>
         </section>

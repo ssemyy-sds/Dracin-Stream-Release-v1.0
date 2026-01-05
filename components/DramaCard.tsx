@@ -19,7 +19,7 @@ export const DramaCard: React.FC<DramaCardProps> = ({ drama, featured = false })
       className={`relative group cursor-pointer transition-all duration-300 ${featured ? 'md:col-span-2 md:row-span-2' : ''}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      onClick={() => navigate(`/watch/${drama.id}`)}
+      onClick={() => navigate(`/watch/${drama.bookId}`)}
     >
       <div className={`relative overflow-hidden rounded-md bg-brand-gray aspect-[2/3] ${featured ? 'md:aspect-video' : ''}`}>
         {/* Optimized Skeleton Loader */}
@@ -30,8 +30,8 @@ export const DramaCard: React.FC<DramaCardProps> = ({ drama, featured = false })
         )}
         
         <img 
-          src={featured && drama.poster ? drama.poster : drama.thumbnail} 
-          alt={drama.title}
+          src={drama.cover} 
+          alt={drama.bookName}
           loading="lazy"
           onLoad={() => setImageLoaded(true)}
           className={`w-full h-full object-cover transition-transform duration-500 ${isHovered ? 'scale-110' : 'scale-100'} ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
@@ -49,7 +49,7 @@ export const DramaCard: React.FC<DramaCardProps> = ({ drama, featured = false })
 
         {/* Content Info */}
         <div className="absolute bottom-0 left-0 right-0 p-3 z-20">
-          <h3 className="text-white font-semibold truncate text-sm md:text-base drop-shadow-md">{drama.title}</h3>
+          <h3 className="text-white font-semibold truncate text-sm md:text-base drop-shadow-md">{drama.bookName}</h3>
           <div className="flex items-center gap-2 mt-1">
             <span className="text-gray-300 text-xs border border-gray-500 px-1 rounded">{drama.year}</span>
             <span className="text-gray-300 text-xs truncate max-w-[100px]">{drama.genres[0]}</span>

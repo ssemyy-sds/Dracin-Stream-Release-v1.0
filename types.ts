@@ -1,30 +1,34 @@
+
 export interface Drama {
-  id: string;
-  title: string;
-  thumbnail: string;
-  poster?: string;
+  bookId: string;
+  bookName: string; // Was title
+  cover: string;    // Was thumbnail/poster
+  introduction: string; // Was description
+  
+  // Additional/Derived fields
   rating: number;
   genres: string[];
-  description: string;
   status: 'Ongoing' | 'Completed';
   year: number;
-  latestEpisode?: number;
-  streamUrl?: string; // m3u8 url
+  latestEpisode: number;
+  
+  // Optional raw fields from API for reference
+  chapterCount?: number;
+  viewCount?: number;
 }
 
 export interface Episode {
-  id: string;
-  dramaId: string;
-  episodeNumber: number;
-  title: string;
-  streamUrl: string;
-  thumbnail?: string;
+  chapterId: string;
+  chapterIndex: number;
+  chapterName: string; // Was title
+  cover?: string;      // Episode specific cover
+  
+  // Pre-processed video URL from cdnList
+  videoUrl: string;
 }
 
 export interface ApiResponse<T> {
   data: T;
-  status: number;
-  message: string;
+  code?: number;
+  msg?: string;
 }
-
-export type ViewMode = 'grid' | 'list';
