@@ -4,11 +4,10 @@
 
 export default async function handler(request, response) {
   const PRIMARY_API = process.env.UPSTREAM_API_URL;
-  const SECONDARY_API = 'https://api.gimita.id';
+  // Fix: Append /api to the base URL so that downstream paths (e.g., search/dramabox) resolve correctly to https://api.gimita.id/api/search/dramabox
+  const SECONDARY_API = 'https://api.gimita.id/api';
 
   // FIX: [DEP0169] DeprecationWarning mitigation.
-  // Instead of using `new URL(request.url, base)` which might trigger internal legacy parsing
-  // on the request object in some Vercel runtimes, we strictly use string splitting.
   const urlParts = (request.url || '').split('?');
   const pathname = urlParts[0];
   const queryString = urlParts.length > 1 ? urlParts[1] : '';
@@ -19,6 +18,7 @@ export default async function handler(request, response) {
   
   // Robust path extraction
   if (!path) {
+    // If request is /api/search/dramabox, split gets ['', 'search/dramabox']
     const splitPath = pathname.split('/api/');
     if (splitPath.length > 1) {
       path = splitPath[1];
@@ -34,10 +34,11 @@ export default async function handler(request, response) {
   }
 
   // Determine Base URL
+  // Remove trailing slash to prevent double slashes when joining with path
   const baseUrl = (provider === 'secondary' ? SECONDARY_API : PRIMARY_API).replace(/\/$/, '');
   
-  // Clean path
-  const cleanPathParam = Array.isArray(path) ? path.join('/') : path;
+  // Clean path: Ensure no leading slash in path to avoid double slash issues
+  const cleanPathParam = (Array.isArray(path) ? path.join('/') : path).replace(/^\//, '');
   
   // Construct target URL
   const targetUrl = new URL(`${baseUrl}/${cleanPathParam}`);
