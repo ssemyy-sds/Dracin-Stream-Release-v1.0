@@ -12,10 +12,6 @@ const fixUrl = (url?: string) => {
     
     // Handle specific relative paths often found in scraper APIs
     if (url.startsWith('/uploads') || url.startsWith('/images')) {
-       // Assumption: Relative paths belong to the secondary provider if encountered there
-       // But usually, we just need a valid absolute URL. 
-       // If source is unknown, we can't easily fix relative / without a base.
-       // However, often these are just missing http
        return url; 
     }
 
@@ -49,6 +45,7 @@ const fetchFromApi = async (endpoint: string, params: Record<string, string> = {
 
     // Silent Fail on 400/404 to trigger fallback mechanism gracefully
     if (!response.ok) {
+        // We log strict errors but suppress 400/404 which are common in API failover scenarios
         if (response.status !== 404 && response.status !== 400) {
             console.warn(`API Error ${response.status} for ${endpoint} (${provider})`);
         }
@@ -131,7 +128,6 @@ export const dramaService = {
 
       // 2. Try Secondary (Gimita)
       // Path: /api/search/dramabox?action=home -> mapped via proxy
-      // Console log removed to reduce noise in production, assume fallback is active
       data = await fetchFromApi('api/search/dramabox', { action: 'home' }, 'secondary');
 
       if (data && Array.isArray(data) && data.length > 0) {
