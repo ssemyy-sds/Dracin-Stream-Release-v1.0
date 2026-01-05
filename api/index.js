@@ -3,18 +3,13 @@
 // Acts as a proxy to bypass CORS in production
 
 export default async function handler(request, response) {
-  const API_BASE_URL = process.env.UPSTREAM_API_URL;
+  // Primary API from env, Secondary API hardcoded as requested fallback
+  const PRIMARY_API = process.env.UPSTREAM_API_URL;
+  const SECONDARY_API = 'https://api.gimita.id';
 
-  if (!API_BASE_URL) {
-    console.error('Missing UPSTREAM_API_URL environment variable');
-    return response.status(500).json({ error: 'Server Configuration Error' });
-  }
-
-  // Robust path extraction: 
-  // 1. Try to get 'path' from query (set by vercel.json rewrite)
-  // 2. Fallback to extracting from request.url if query is missing (common in Vercel's direct routing)
-  let { path } = request.query;
+  let { path, provider } = request.query;
   
+  // Robust path extraction
   if (!path) {
     const urlParts = request.url.split('/api/');
     if (urlParts.length > 1) {
@@ -30,14 +25,22 @@ export default async function handler(request, response) {
     });
   }
 
+  // Determine Base URL
+  const baseUrl = (provider === 'secondary' ? SECONDARY_API : PRIMARY_API).replace(/\/$/, '');
+  
   // Clean path and construct target URL
   const cleanPathParam = Array.isArray(path) ? path.join('/') : path;
-  const baseUrl = API_BASE_URL.replace(/\/$/, ''); // Remove trailing slash
+  
+  // Handle absolute path vs relative path logic regarding the base url structure
+  // If cleanPathParam already contains 'api/', avoid doubling it if the base also has it?
+  // Simply appending usually works if UPSTREAM_API_URL is the root domain. 
+  // Given user config: UPSTREAM is .../api/dramabox. We append the endpoint.
+  
   const targetUrl = new URL(`${baseUrl}/${cleanPathParam}`);
   
   // Forward all other query parameters
   Object.keys(request.query).forEach(key => {
-    if (key !== 'path') {
+    if (key !== 'path' && key !== 'provider') {
       targetUrl.searchParams.append(key, request.query[key]);
     }
   });
@@ -57,10 +60,10 @@ export default async function handler(request, response) {
     if (contentType && contentType.includes('application/json')) {
       data = await apiResponse.json();
     } else {
-      // If not JSON, return the raw text or a placeholder
       const text = await apiResponse.text();
-      console.warn(`Upstream returned non-JSON for ${path}:`, text.substring(0, 100));
-      data = { result: null, raw: text.substring(0, 200), message: 'Upstream returned non-JSON response' };
+      console.warn(`Upstream (${provider || 'primary'}) returned non-JSON for ${path}:`, text.substring(0, 100));
+      // Return null data but 200 OK so client can handle fallback gracefully
+      return response.status(200).json({ data: [], error: 'Upstream returned non-JSON' });
     }
     
     // Set CORS headers
@@ -76,6 +79,8 @@ export default async function handler(request, response) {
       return response.status(200).end();
     }
 
+    // Pass through the status unless it failed, then maybe mask it? 
+    // Let's pass it through.
     return response.status(apiResponse.status).json(data);
   } catch (error) {
     console.error('Proxy Error:', error.message);
