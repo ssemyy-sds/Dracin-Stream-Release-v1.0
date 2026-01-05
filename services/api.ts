@@ -125,136 +125,146 @@ const normalizeEpisode = (item: any, dramaId: string, index?: number): Episode =
   };
 };
 
-// --- Service Methods with Fallback Logic ---
+// --- Standalone Functions (to avoid circular dependencies in the export object) ---
 
-export const dramaService = {
-  getWithFallback: async (primaryEndpoint: string): Promise<Drama[]> => {
-      // 1. Try Primary
-      let data = await fetchFromApi(primaryEndpoint);
-      
-      if (data && Array.isArray(data) && data.length > 0) {
-          return data.map(normalizeDrama);
-      }
-
-      // 2. Try Secondary (Gimita)
-      data = await fetchFromApi('api/search/dramabox', { action: 'home' }, 'secondary');
-
-      if (data && Array.isArray(data) && data.length > 0) {
-          return data.map(normalizeDrama);
-      }
-
-      return [];
-  },
-
-  getForYou: async (): Promise<Drama[]> => {
-    return dramaService.getWithFallback('/foryou');
-  },
-
-  getLatest: async (): Promise<Drama[]> => {
-    return dramaService.getWithFallback('/latest');
-  },
-
-  getTrending: async (): Promise<Drama[]> => {
-    return dramaService.getWithFallback('/trending');
-  },
-
-  getVip: async (): Promise<Drama[]> => {
-    return dramaService.getWithFallback('/vip');
-  },
-
-  getDubIndo: async (): Promise<Drama[]> => {
-    return dramaService.getWithFallback('/dubindo');
-  },
-
-  getByCategory: async (category: string): Promise<Drama[]> => {
-    switch (category.toLowerCase()) {
-      case 'foryou': return dramaService.getForYou();
-      case 'trending': return dramaService.getTrending();
-      case 'latest': return dramaService.getLatest();
-      case 'vip': return dramaService.getVip();
-      case 'dubindo': return dramaService.getDubIndo();
-      default: return dramaService.getTrending();
-    }
-  },
-
-  getById: async (id: string): Promise<Drama | undefined> => {
-    // Try Primary Detail
-    let data = await fetchFromApi('/detail', { bookId: id });
-    
-    if (!data) return undefined;
-    
-    const item = Array.isArray(data) ? data[0] : data;
-    return normalizeDrama(item);
-  },
-
-  search: async (query: string): Promise<Drama[]> => {
-    if (!query) return [];
-    
-    let data = await fetchFromApi('/search', { query: query });
-    
-    if (!data || !Array.isArray(data) || data.length === 0) {
-        data = await fetchFromApi('api/search/dramabox', { action: 'search', query: query }, 'secondary');
-    }
-
-    if (!data || !Array.isArray(data)) return [];
-    
-    return data.map(normalizeDrama);
-  },
-
-  getEpisodes: async (dramaId: string): Promise<Episode[]> => {
-    // 1. Try fetching explicit episode list
-    const data = await fetchFromApi('/allepisode', { bookId: dramaId });
+const getWithFallback = async (primaryEndpoint: string): Promise<Drama[]> => {
+    // 1. Try Primary
+    let data = await fetchFromApi(primaryEndpoint);
     
     if (data && Array.isArray(data) && data.length > 0) {
-        return data
-        .map((item: any) => normalizeEpisode(item, dramaId))
-        .sort((a, b) => a.episodeNumber - b.episodeNumber);
+        return data.map(normalizeDrama);
     }
 
-    // 2. If no episode list returned, but we know the ID exists (from getById or list),
-    // we generate a virtual list based on chapterCount from the Drama detail.
-    // NOTE: This requires fetching detail if we don't have it, but for now we assume 
-    // we handle this by fetching detail in the WatchPage and passing count, 
-    // OR we fetch detail here if needed.
-    // Let's re-fetch detail to be safe and get the count.
-    const detailData = await dramaService.getById(dramaId);
-    
-    if (detailData && detailData.latestEpisode && detailData.latestEpisode > 0) {
-        const virtualEpisodes: Episode[] = [];
-        for (let i = 1; i <= detailData.latestEpisode; i++) {
-            virtualEpisodes.push({
-                id: `virt-${dramaId}-${i}`,
-                dramaId: dramaId,
-                episodeNumber: i,
-                title: `Episode ${i}`,
-                streamUrl: '', // Will be fetched on demand
-                thumbnail: detailData.thumbnail
-            });
-        }
-        return virtualEpisodes;
+    // 2. Try Secondary (Gimita)
+    data = await fetchFromApi('api/search/dramabox', { action: 'home' }, 'secondary');
+
+    if (data && Array.isArray(data) && data.length > 0) {
+        return data.map(normalizeDrama);
     }
 
     return [];
-  },
+};
 
-  // NEW: Fetch specific stream URL from Secondary API
-  getStreamUrl: async (bookId: string, episode: number): Promise<string | null> => {
-      // Call: /api/search/dramabox?action=stream&book_id=...&episode=...
-      const data = await fetchFromApi('api/search/dramabox', {
-          action: 'stream',
-          book_id: bookId,
-          episode: episode.toString()
-      }, 'secondary');
+const getForYou = async (): Promise<Drama[]> => {
+  return getWithFallback('/foryou');
+};
 
-      if (data && data.url) {
-          return fixUrl(data.url) || null;
-      }
-      return null;
-  },
+const getLatest = async (): Promise<Drama[]> => {
+  return getWithFallback('/latest');
+};
 
-  getRandom: async (): Promise<Drama[]> => {
-    const data = await fetchFromApi('/randomdrama');
-    if (!data || !Array.isArray(data)) return dramaService.getTrending();
-    return data.map(normalizeDrama);
+const getTrending = async (): Promise<Drama[]> => {
+  return getWithFallback('/trending');
+};
+
+const getVip = async (): Promise<Drama[]> => {
+  return getWithFallback('/vip');
+};
+
+const getDubIndo = async (): Promise<Drama[]> => {
+  return getWithFallback('/dubindo');
+};
+
+const getByCategory = async (category: string): Promise<Drama[]> => {
+  switch (category.toLowerCase()) {
+    case 'foryou': return getForYou();
+    case 'trending': return getTrending();
+    case 'latest': return getLatest();
+    case 'vip': return getVip();
+    case 'dubindo': return getDubIndo();
+    default: return getTrending();
   }
+};
+
+const getById = async (id: string): Promise<Drama | undefined> => {
+  // Try Primary Detail
+  let data = await fetchFromApi('/detail', { bookId: id });
+  
+  if (!data) return undefined;
+  
+  const item = Array.isArray(data) ? data[0] : data;
+  return normalizeDrama(item);
+};
+
+const search = async (query: string): Promise<Drama[]> => {
+  if (!query) return [];
+  
+  let data = await fetchFromApi('/search', { query: query });
+  
+  if (!data || !Array.isArray(data) || data.length === 0) {
+      data = await fetchFromApi('api/search/dramabox', { action: 'search', query: query }, 'secondary');
+  }
+
+  if (!data || !Array.isArray(data)) return [];
+  
+  return data.map(normalizeDrama);
+};
+
+const getEpisodes = async (dramaId: string): Promise<Episode[]> => {
+  // 1. Try fetching explicit episode list
+  const data = await fetchFromApi('/allepisode', { bookId: dramaId });
+  
+  if (data && Array.isArray(data) && data.length > 0) {
+      return data
+      .map((item: any) => normalizeEpisode(item, dramaId))
+      .sort((a, b) => a.episodeNumber - b.episodeNumber);
+  }
+
+  // 2. Fallback: Generate virtual episodes based on chapterCount from details
+  // Use getById directly here instead of dramaService.getById to avoid circular dependency
+  const detailData = await getById(dramaId);
+  
+  if (detailData && detailData.latestEpisode && detailData.latestEpisode > 0) {
+      const virtualEpisodes: Episode[] = [];
+      for (let i = 1; i <= detailData.latestEpisode; i++) {
+          virtualEpisodes.push({
+              id: `virt-${dramaId}-${i}`,
+              dramaId: dramaId,
+              episodeNumber: i,
+              title: `Episode ${i}`,
+              streamUrl: '', // Will be fetched on demand
+              thumbnail: detailData.thumbnail
+          });
+      }
+      return virtualEpisodes;
+  }
+
+  return [];
+};
+
+const getStreamUrl = async (bookId: string, episode: number): Promise<string | null> => {
+    // Call: /api/search/dramabox?action=stream&book_id=...&episode=...
+    const data = await fetchFromApi('api/search/dramabox', {
+        action: 'stream',
+        book_id: bookId,
+        episode: episode.toString()
+    }, 'secondary');
+
+    if (data && data.url) {
+        return fixUrl(data.url) || null;
+    }
+    return null;
+};
+
+const getRandom = async (): Promise<Drama[]> => {
+  const data = await fetchFromApi('/randomdrama');
+  if (!data || !Array.isArray(data)) return getTrending();
+  return data.map(normalizeDrama);
+};
+
+// --- Export ---
+
+export const dramaService = {
+  getWithFallback,
+  getForYou,
+  getLatest,
+  getTrending,
+  getVip,
+  getDubIndo,
+  getByCategory,
+  getById,
+  search,
+  getEpisodes,
+  getStreamUrl,
+  getRandom
 };
