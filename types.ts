@@ -1,4 +1,4 @@
-// src/types.ts
+// types.ts atau types.js
 export interface Drama {
   bookId: string;
   bookName: string;
@@ -42,12 +42,4 @@ export interface VideoPath {
   isDefault: number;
   isEntry: number;
   isVipEquity: number;
-}
-
-export interface ApiResponse<T> {
-  data: T;
-  status: number;
-  message: string;
-  timestamp: number;
-  success: boolean;
 }
