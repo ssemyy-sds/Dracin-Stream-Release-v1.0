@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { Play, Pause, Volume2, VolumeX, Maximize, Settings, Check } from 'lucide-react';
@@ -39,14 +40,28 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster }) => {
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !src) return;
 
-    if (Hls.isSupported()) {
+    // cleanup previous hls
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+
+    // Determine Source Type
+    const isHlsSource = src.includes('.m3u8');
+    
+    // Reset States
+    setQualities([]);
+    setIsHlsSupported(false);
+    setCurrentQuality(-1);
+
+    if (isHlsSource && Hls.isSupported()) {
       setIsHlsSupported(true);
       const hls = new Hls({
-        capLevelToPlayerSize: true, // Optimizes for player size (mobile friendly)
+        capLevelToPlayerSize: true, 
         autoStartLoad: true,
-        startLevel: -1 // Auto start
+        startLevel: -1 
       });
       hlsRef.current = hls;
 
@@ -54,23 +69,25 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster }) => {
       hls.attachMedia(video);
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        // Extract available levels
         const levels = hls.levels.map((level, index) => ({
           height: level.height,
           level: index
-        })).sort((a, b) => b.height - a.height); // Descending resolution
+        })).sort((a, b) => b.height - a.height); 
 
         setQualities(levels);
       });
-
-      hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
-          // Optional: Update UI to show what Auto selected? 
-          // Usually we just show "Auto" unless manually overridden
-      });
-
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    } else {
+      // Native Playback (MP4 or Native HLS Safari)
       video.src = src;
-      setIsHlsSupported(false); // Native HLS (Safari) usually doesn't allow manual quality selection via JS easily
+      
+      // Safari Native HLS support check
+      if (isHlsSource && video.canPlayType('application/vnd.apple.mpegurl')) {
+          // Native HLS usually doesn't expose quality levels easily via JS
+          setIsHlsSupported(false); 
+      } else {
+          // Regular MP4
+          setIsHlsSupported(false);
+      }
     }
 
     // Apply playback rate on source change
