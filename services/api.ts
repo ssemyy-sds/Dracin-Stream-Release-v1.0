@@ -67,21 +67,21 @@ const fetchFromApi = async (endpoint: string, params: Record<string, string> = {
 
 // Adapter: Robust Normalization for multiple API sources
 const normalizeDrama = (item: any): Drama => {
-  // ID Mapping: bookId is priority for Dramabox API
-  const id = item.bookId?.toString() || item.id?.toString() || item.link || crypto.randomUUID();
+  // ID Mapping: bookId is priority
+  // Some APIs return 'book_id', some 'bookId', some 'id'
+  const id = item.bookId?.toString() || item.book_id?.toString() || item.id?.toString() || item.link || crypto.randomUUID();
   
   // Title Mapping: bookName is priority
-  const title = item.bookName || item.title || item.name || 'Unknown Title';
+  const title = item.bookName || item.book_name || item.title || item.name || 'Unknown Title';
   
   // Image Mapping 
-  // Priority: coverWap (Dramabox) -> cover -> poster ...
   const rawThumb = item.coverWap || item.cover || item.poster || item.thumb || item.thumbnail || item.image || item.img || item.url_img;
   const rawPoster = item.coverWap || item.poster || item.cover || item.image || item.thumb || item.thumbnail || item.img;
   
-  // Description Mapping: introduction is priority
+  // Description Mapping
   const description = item.introduction || item.intro || item.synopsis || item.description || item.desc || 'No synopsis available.';
 
-  // Genres/Tags Mapping: tags (Array) is priority
+  // Genres/Tags Mapping
   let genres = ['Drama'];
   if (Array.isArray(item.tags) && item.tags.length > 0) {
       genres = item.tags;
@@ -92,7 +92,9 @@ const normalizeDrama = (item: any): Drama => {
   }
 
   // Episode Count
-  const latestEpisode = parseInt(item.chapterCount || item.latest_episode || item.total_episode || '0');
+  // Handle string numbers and inconsistencies like "80" vs 80
+  const countRaw = item.chapterCount || item.chapter_count || item.total_chapter || item.latest_episode || item.total_episode || '0';
+  const latestEpisode = parseInt(String(countRaw), 10);
 
   // Placeholders
   const PLACEHOLDER_THUMB = 'https://placehold.co/300x450/1e1e1e/FFF?text=No+Image';
@@ -151,7 +153,7 @@ const getWithFallback = async (primaryEndpoint: string): Promise<Drama[]> => {
         return data.map(normalizeDrama);
     }
 
-    // 2. Try Secondary (Gimita) - Removed 'api/' prefix to fix double prefixing
+    // 2. Try Secondary (Gimita)
     data = await fetchFromApi('search/dramabox', { action: 'home' }, 'secondary');
 
     if (data && Array.isArray(data) && data.length > 0) {
@@ -193,26 +195,19 @@ const getByCategory = async (category: string): Promise<Drama[]> => {
 };
 
 const getById = async (id: string): Promise<Drama | undefined> => {
-  // 1. Try Primary Detail
+  // STRICT IMPLEMENTATION: Call /detail?bookId=...
+  // This expects the upstream API to respond to `bookId` param.
   let data = await fetchFromApi('/detail', { bookId: id });
   
-  // 2. Fallback to Secondary if primary fails or returns empty
+  // Validation: If data is empty or empty array, try Secondary
   if (!data || (Array.isArray(data) && data.length === 0)) {
-      // Try fetching via secondary API detail action
+       // Secondary Fallback
       data = await fetchFromApi('search/dramabox', { action: 'detail', book_id: id }, 'secondary');
   }
 
-  // 3. Fallback: If still no detail, try searching it by ID (some APIs use ID as search term)
-  if (!data) {
-       // This is a desperate fallback to get metadata if direct detail fails
-       const searchData = await fetchFromApi('search/dramabox', { action: 'search', query: id }, 'secondary');
-       if (searchData && Array.isArray(searchData) && searchData.length > 0) {
-           data = searchData[0]; // Assume first result is the match
-       }
-  }
-  
   if (!data) return undefined;
   
+  // Handle Case where API returns array [Object] vs just Object
   const item = Array.isArray(data) ? data[0] : data;
   return normalizeDrama(item);
 };
@@ -222,7 +217,6 @@ const search = async (query: string): Promise<Drama[]> => {
   
   let data = await fetchFromApi('/search', { query: query });
   
-  // Fallback to Secondary - Removed 'api/' prefix
   if (!data || !Array.isArray(data) || data.length === 0) {
       data = await fetchFromApi('search/dramabox', { action: 'search', query: query }, 'secondary');
   }
@@ -233,7 +227,7 @@ const search = async (query: string): Promise<Drama[]> => {
 };
 
 const getEpisodes = async (dramaId: string): Promise<Episode[]> => {
-  // 1. Try fetching explicit episode list
+  // 1. Try fetching explicit episode list from primary
   let data = await fetchFromApi('/allepisode', { bookId: dramaId });
   
   if (data && Array.isArray(data) && data.length > 0) {
@@ -242,18 +236,8 @@ const getEpisodes = async (dramaId: string): Promise<Episode[]> => {
       .sort((a, b) => a.episodeNumber - b.episodeNumber);
   }
 
-  // 2. Try Secondary explicit list
-  if (!data) {
-      data = await fetchFromApi('search/dramabox', { action: 'chapter_list', book_id: dramaId }, 'secondary');
-      if (data && Array.isArray(data) && data.length > 0) {
-          return data
-          .map((item: any) => normalizeEpisode(item, dramaId))
-          .sort((a, b) => a.episodeNumber - b.episodeNumber);
-      }
-  }
-
-  // 3. Fallback: Generate virtual episodes based on chapterCount from details
-  // Use getById directly here instead of dramaService.getById to avoid circular dependency
+  // 2. Fallback: Generate virtual episodes based on chapterCount from details
+  // We call getById again (cached by browser usually or fast enough) to get the count
   const detailData = await getById(dramaId);
   
   if (detailData && detailData.latestEpisode && detailData.latestEpisode > 0) {
@@ -264,7 +248,7 @@ const getEpisodes = async (dramaId: string): Promise<Episode[]> => {
               dramaId: dramaId,
               episodeNumber: i,
               title: `Episode ${i}`,
-              streamUrl: '', // Will be fetched on demand
+              streamUrl: '', // Will be fetched on demand via getStreamUrl
               thumbnail: detailData.thumbnail
           });
       }
@@ -275,8 +259,8 @@ const getEpisodes = async (dramaId: string): Promise<Episode[]> => {
 };
 
 const getStreamUrl = async (bookId: string, episode: number): Promise<string | null> => {
-    // Call: /api/search/dramabox?action=stream&book_id=...&episode=...
-    // Removed 'api/' prefix because BASE_URL adds '/api' and proxy expects 'search/dramabox'
+    // 1. Try Secondary API (Gimita) which often has the stream links
+    // Action: stream, book_id: ..., episode: ...
     const data = await fetchFromApi('search/dramabox', {
         action: 'stream',
         book_id: bookId,
@@ -286,6 +270,7 @@ const getStreamUrl = async (bookId: string, episode: number): Promise<string | n
     if (data && data.url) {
         return fixUrl(data.url) || null;
     }
+    
     return null;
 };
 
