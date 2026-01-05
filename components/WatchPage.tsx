@@ -1,18 +1,17 @@
-// src/components/WatchPage.tsx
-import { useEffect, useState } from 'react';
+// components/WatchPage.tsx atau components/WatchPage.jsx
+import react, { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Drama, Episode } from '../types';
 import { getDramaDetail, getAllEpisodes } from '../services/api';
 import VideoPlayer from './VideoPlayer';
 
 export default function WatchPage() {
-  const { bookId } = useParams<{ bookId: string }>();
+  const { bookId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   
-  const [drama, setDrama] = useState<Drama | null>(null);
-  const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [drama, setDrama] = useState(null);
+  const [episodes, setEpisodes] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(null);
   
   const currentEpisodeId = searchParams.get('episode') || episodes[0]?.chapterId;
   const currentEpisode = episodes.find(ep => ep.chapterId === currentEpisodeId);
@@ -29,24 +28,26 @@ export default function WatchPage() {
         setLoading(true);
         setError(null);
 
-        // Fetch drama detail and episodes in parallel
+        console.log('[WatchPage] Loading bookId:', bookId);
+
+        // Fetch drama detail dan episodes secara parallel
         const [dramaData, episodesData] = await Promise.all([
           getDramaDetail(bookId),
           getAllEpisodes(bookId)
         ]);
 
-        console.log('Drama loaded:', dramaData);
-        console.log('Episodes loaded:', episodesData);
+        console.log('[WatchPage] Drama loaded:', dramaData);
+        console.log('[WatchPage] Episodes loaded:', episodesData.length, 'episodes');
 
         setDrama(dramaData);
         setEpisodes(episodesData);
 
-        // Set first episode as default if no episode selected
+        // Set episode pertama sebagai default jika belum ada yang dipilih
         if (!currentEpisodeId && episodesData.length > 0) {
           setSearchParams({ episode: episodesData[0].chapterId });
         }
       } catch (err) {
-        console.error('Error loading watch page:', err);
+        console.error('[WatchPage] Error loading data:', err);
         setError(err instanceof Error ? err.message : 'Failed to load drama');
       } finally {
         setLoading(false);
@@ -56,11 +57,11 @@ export default function WatchPage() {
     loadData();
   }, [bookId]);
 
-  const handleEpisodeSelect = (chapterId: string) => {
+  const handleEpisodeSelect = (chapterId) => {
     setSearchParams({ episode: chapterId });
   };
 
-  // Get video URL from current episode
+  // Get video URL dari current episode
   const videoUrl = currentEpisode?.cdnList?.[0]?.videoPathList?.find(
     v => v.isDefault === 1
   )?.videoPath || currentEpisode?.cdnList?.[0]?.videoPathList?.[0]?.videoPath;
@@ -168,18 +169,18 @@ export default function WatchPage() {
             {drama.performerList && drama.performerList.length > 0 && (
               <div className="mt-6">
                 <h2 className="text-xl font-bold text-white mb-3">Cast</h2>
-                <div className="flex gap-4 overflow-x-auto">
+                <div className="flex gap-4 overflow-x-auto pb-2">
                   {drama.performerList.map((performer) => (
-                    <div key={performer.performerId} className="flex-shrink-0">
+                    <div key={performer.performerId} className="flex-shrink-0 text-center">
                       <img
                         src={performer.performerAvatar}
                         alt={performer.performerName}
-                        className="w-16 h-16 rounded-full object-cover mb-2"
+                        className="w-16 h-16 rounded-full object-cover mb-2 mx-auto"
                         onError={(e) => {
                           e.currentTarget.src = 'https://placehold.co/100x100/1e1e1e/FFF?text=?';
                         }}
                       />
-                      <p className="text-sm text-white text-center">
+                      <p className="text-sm text-white max-w-[80px] truncate">
                         {performer.performerName}
                       </p>
                     </div>
@@ -194,7 +195,7 @@ export default function WatchPage() {
             <h2 className="text-xl font-bold text-white mb-4">
               Episodes ({episodes.length})
             </h2>
-            <div className="space-y-2 max-h-[600px] overflow-y-auto">
+            <div className="space-y-2 max-h-[600px] overflow-y-auto pr-2">
               {episodes.map((episode) => (
                 <button
                   key={episode.chapterId}
@@ -206,8 +207,9 @@ export default function WatchPage() {
                   }`}
                 >
                   <p className="font-semibold">{episode.chapterName}</p>
+                  <p className="text-xs opacity-75 mt-1">Episode {episode.chapterIndex}</p>
                   {episode.isCharge === 1 && (
-                    <span className="text-xs bg-yellow-500 text-black px-2 py-1 rounded mt-1 inline-block">
+                    <span className="text-xs bg-yellow-500 text-black px-2 py-1 rounded mt-2 inline-block">
                       Premium
                     </span>
                   )}
