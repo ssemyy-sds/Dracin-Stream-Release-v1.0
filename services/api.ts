@@ -43,7 +43,6 @@ const fetchFromApi = async (endpoint: string, params: Record<string, string> = {
       headers: { 'Accept': 'application/json' }
     });
 
-    // Silent Fail on 400/404 to trigger fallback mechanism gracefully
     if (!response.ok) {
         if (response.status !== 404 && response.status !== 400) {
             console.warn(`API Error ${response.status} for ${endpoint} (${provider})`);
@@ -52,12 +51,22 @@ const fetchFromApi = async (endpoint: string, params: Record<string, string> = {
     }
     
     const json = await response.json();
+
+    // LOGIC CHECK: Many APIs return 200 OK but with { code: 404, msg: "Not Found" }
+    // We must treat this as a failure to trigger fallback
+    if (json.code !== undefined && json.code !== 200 && json.code !== 0) {
+        // code 0 or 200 usually means success in Chinese APIs
+        console.warn(`API Logic Error: ${json.msg || 'Unknown'}`, json);
+        return null; 
+    }
     
     // Validation: Handle various API response structures
     const result = json.data || json.result || json;
     
     if (!result) return null;
     if (Array.isArray(result) && result.length === 0) return null;
+    // Check if result is an empty object
+    if (typeof result === 'object' && Object.keys(result).length === 0) return null;
     
     return result;
   } catch (error) {
@@ -68,7 +77,6 @@ const fetchFromApi = async (endpoint: string, params: Record<string, string> = {
 // Adapter: Robust Normalization for multiple API sources
 const normalizeDrama = (item: any): Drama => {
   // ID Mapping: bookId is priority
-  // Some APIs return 'book_id', some 'bookId', some 'id'
   const id = item.bookId?.toString() || item.book_id?.toString() || item.id?.toString() || item.link || crypto.randomUUID();
   
   // Title Mapping: bookName is priority
@@ -92,7 +100,6 @@ const normalizeDrama = (item: any): Drama => {
   }
 
   // Episode Count
-  // Handle string numbers and inconsistencies like "80" vs 80
   const countRaw = item.chapterCount || item.chapter_count || item.total_chapter || item.latest_episode || item.total_episode || '0';
   const latestEpisode = parseInt(String(countRaw), 10);
 
@@ -122,7 +129,7 @@ const normalizeEpisode = (item: any, dramaId: string, index?: number): Episode =
     dramaId: dramaId,
     episodeNumber: epNum,
     title: item.title || `Episode ${epNum}`,
-    streamUrl: item.url || item.stream_url || '', // Might be empty initially
+    streamUrl: item.url || item.stream_url || '', 
     thumbnail: item.thumbnail || item.cover
   };
 };
@@ -154,6 +161,7 @@ const getWithFallback = async (primaryEndpoint: string): Promise<Drama[]> => {
     }
 
     // 2. Try Secondary (Gimita)
+    // Note: removed 'api/' prefix as BASE_URL handles it
     data = await fetchFromApi('search/dramabox', { action: 'home' }, 'secondary');
 
     if (data && Array.isArray(data) && data.length > 0) {
@@ -195,19 +203,29 @@ const getByCategory = async (category: string): Promise<Drama[]> => {
 };
 
 const getById = async (id: string): Promise<Drama | undefined> => {
-  // STRICT IMPLEMENTATION: Call /detail?bookId=...
-  // This expects the upstream API to respond to `bookId` param.
+  // 1. Primary: Call /detail?bookId=...
   let data = await fetchFromApi('/detail', { bookId: id });
   
-  // Validation: If data is empty or empty array, try Secondary
-  if (!data || (Array.isArray(data) && data.length === 0)) {
-       // Secondary Fallback
+  // 2. Fallback: Secondary API Detail
+  if (!data) {
       data = await fetchFromApi('search/dramabox', { action: 'detail', book_id: id }, 'secondary');
+  }
+
+  // 3. Last Resort Fallback: Search by ID
+  // Sometimes ID is passed but detail fails, searching might return the item in a list
+  if (!data) {
+      const searchData = await fetchFromApi('search/dramabox', { action: 'search', query: id }, 'secondary');
+      if (searchData && Array.isArray(searchData) && searchData.length > 0) {
+          // Find exact match if possible, otherwise first
+          const exact = searchData.find((d: any) => 
+            (d.bookId?.toString() === id) || (d.id?.toString() === id)
+          );
+          data = exact || searchData[0];
+      }
   }
 
   if (!data) return undefined;
   
-  // Handle Case where API returns array [Object] vs just Object
   const item = Array.isArray(data) ? data[0] : data;
   return normalizeDrama(item);
 };
@@ -236,8 +254,18 @@ const getEpisodes = async (dramaId: string): Promise<Episode[]> => {
       .sort((a, b) => a.episodeNumber - b.episodeNumber);
   }
 
-  // 2. Fallback: Generate virtual episodes based on chapterCount from details
-  // We call getById again (cached by browser usually or fast enough) to get the count
+  // 2. Try fetching from Secondary API (Gimita Chapter List)
+  if (!data) {
+      data = await fetchFromApi('search/dramabox', { action: 'chapter_list', book_id: dramaId }, 'secondary');
+      if (data && Array.isArray(data) && data.length > 0) {
+          return data
+          .map((item: any) => normalizeEpisode(item, dramaId))
+          .sort((a, b) => a.episodeNumber - b.episodeNumber);
+      }
+  }
+
+  // 3. Fallback: Generate virtual episodes based on chapterCount from details
+  // We call getById again (it likely has cached result or is fast enough)
   const detailData = await getById(dramaId);
   
   if (detailData && detailData.latestEpisode && detailData.latestEpisode > 0) {
@@ -259,9 +287,8 @@ const getEpisodes = async (dramaId: string): Promise<Episode[]> => {
 };
 
 const getStreamUrl = async (bookId: string, episode: number): Promise<string | null> => {
-    // 1. Try Secondary API (Gimita) which often has the stream links
-    // Action: stream, book_id: ..., episode: ...
-    const data = await fetchFromApi('search/dramabox', {
+    // 1. Try Secondary API (Gimita) - Most reliable for streams
+    let data = await fetchFromApi('search/dramabox', {
         action: 'stream',
         book_id: bookId,
         episode: episode.toString()
@@ -271,6 +298,17 @@ const getStreamUrl = async (bookId: string, episode: number): Promise<string | n
         return fixUrl(data.url) || null;
     }
     
+    // 2. Try Primary API fallback for stream (rare but possible)
+    // Some primary APIs support /play?bookId=...&episode=...
+    data = await fetchFromApi('/play', { 
+        bookId: bookId, 
+        episode: episode.toString() 
+    });
+
+    if (data && data.url) {
+        return fixUrl(data.url) || null;
+    }
+
     return null;
 };
 
