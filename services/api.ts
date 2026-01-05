@@ -50,8 +50,8 @@ const fetchFromApi = async (endpoint: string, params: Record<string, string> = {
     
     const json = await response.json();
 
-    // LOGIC CHECK: Many APIs return 200 OK but with { code: 404, msg: "Not Found" }
-    if (json.code !== undefined && json.code !== 200 && json.code !== 0) {
+    // LOGIC CHECK: Relaxed check to handle string "200"
+    if (json.code !== undefined && json.code != 200 && json.code != 0) {
         console.warn(`API Logic Error: ${json.msg || 'Unknown'}`, json);
         return null; 
     }
@@ -119,9 +119,26 @@ const normalizeDrama = (item: any): Drama => {
 };
 
 const normalizeEpisode = (item: any, dramaId: string, index?: number): Episode => {
-  // Parse episode number
-  const epNum = parseInt(item.episode || item.chapterIndex || index || 0);
+  let epNum = 0;
   
+  // 1. Try to extract explicit number from Title/ChapterName (e.g., "EP 1" -> 1)
+  // This solves the issue where chapterIndex is 0 but it's actually Episode 1
+  const name = item.title || item.chapterName || item.name || '';
+  const match = name.match(/(?:EP|Episode|Chapter)\s*(\d+)/i) || name.match(/^(\d+)$/);
+  
+  if (match) {
+    epNum = parseInt(match[1], 10);
+  } else {
+    // 2. Fallback to properties
+    epNum = parseInt(item.episode || item.chapterIndex || 0);
+    
+    // 3. Fix 0-based index if no name match found
+    // If epNum is 0, it is likely index 0 which corresponds to Ep 1
+    if (epNum === 0 && (item.chapterIndex === 0 || index === 0)) {
+       epNum = 1;
+    }
+  }
+
   // DEFAULT STREAM EXTRACTION LOGIC
   let streamUrl = item.url || item.stream_url || '';
 
@@ -245,48 +262,45 @@ const search = async (query: string): Promise<Drama[]> => {
 
 const getEpisodes = async (dramaId: string): Promise<Episode[]> => {
   // 1. Primary: /allepisode?bookId=[id]
-  // This endpoint returns 'cdnList' with 'videoPath' inside
   let data = await fetchFromApi('/allepisode', { bookId: dramaId });
   
-  if (data && Array.isArray(data) && data.length > 0) {
-      return data
-      .map((item: any) => normalizeEpisode(item, dramaId))
-      .sort((a, b) => a.episodeNumber - b.episodeNumber);
-  }
+  let episodeList: Episode[] = [];
 
+  if (data && Array.isArray(data) && data.length > 0) {
+      episodeList = data.map((item: any) => normalizeEpisode(item, dramaId));
+  } 
   // 2. Secondary: Gimita Chapter List
-  if (!data) {
-      data = await fetchFromApi('search/dramabox', { action: 'chapter_list', book_id: dramaId }, 'secondary');
-      if (data && Array.isArray(data) && data.length > 0) {
-          return data
-          .map((item: any) => normalizeEpisode(item, dramaId))
-          .sort((a, b) => a.episodeNumber - b.episodeNumber);
+  else {
+      const secData = await fetchFromApi('search/dramabox', { action: 'chapter_list', book_id: dramaId }, 'secondary');
+      if (secData && Array.isArray(secData) && secData.length > 0) {
+          episodeList = secData.map((item: any) => normalizeEpisode(item, dramaId));
       }
   }
 
   // 3. Fallback: Virtual Episodes
-  const detailData = await getById(dramaId);
-  if (detailData && detailData.latestEpisode && detailData.latestEpisode > 0) {
-      const virtualEpisodes: Episode[] = [];
-      for (let i = 1; i <= detailData.latestEpisode; i++) {
-          virtualEpisodes.push({
-              id: `virt-${dramaId}-${i}`,
-              dramaId: dramaId,
-              episodeNumber: i,
-              title: `Episode ${i}`,
-              streamUrl: '', 
-              thumbnail: detailData.thumbnail
-          });
+  if (episodeList.length === 0) {
+      const detailData = await getById(dramaId);
+      if (detailData && detailData.latestEpisode && detailData.latestEpisode > 0) {
+          for (let i = 1; i <= detailData.latestEpisode; i++) {
+              episodeList.push({
+                  id: `virt-${dramaId}-${i}`,
+                  dramaId: dramaId,
+                  episodeNumber: i,
+                  title: `Episode ${i}`,
+                  streamUrl: '', 
+                  thumbnail: detailData.thumbnail
+              });
+          }
       }
-      return virtualEpisodes;
   }
 
-  return [];
+  // Filter out Episode 0 and sort
+  return episodeList
+    .filter(ep => ep.episodeNumber > 0)
+    .sort((a, b) => a.episodeNumber - b.episodeNumber);
 };
 
 const getStreamUrl = async (bookId: string, episode: number): Promise<string | null> => {
-    // Note: If getEpisodes worked correctly via Primary API, we shouldn't even need to call this function often.
-    
     // 1. Try Secondary API
     let data = await fetchFromApi('search/dramabox', {
         action: 'stream',
