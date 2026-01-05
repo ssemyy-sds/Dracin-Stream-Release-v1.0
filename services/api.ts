@@ -1,7 +1,10 @@
-// services/api.ts atau services/api.js
+// services/api.ts
 import react from 'react';
 
-const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:5173/api';
+// Fix: Gunakan conditional untuk environment
+const API_BASE = typeof window !== 'undefined' && window.location.hostname === 'localhost'
+  ? 'http://localhost:5173/api'
+  : '/api';
 
 // Helper function untuk normalize drama data dari API
 function normalizeDrama(data) {
@@ -57,7 +60,6 @@ export async function getAllEpisodes(bookId) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    // PENTING: API mengembalikan array langsung, bukan object
     const episodes = await response.json();
     
     console.log('[API] Episodes response:', episodes);

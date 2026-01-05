@@ -1,45 +1,30 @@
-// types.ts atau types.js
 export interface Drama {
-  bookId: string;
-  bookName: string;
-  cover: string;
-  introduction: string;
-  viewCount: number;
-  followCount: number;
-  chapterCount: number;
-  labels?: string[];
-  tags?: string[];
-  typeTwoNames?: string[];
-  language?: string;
-  shelfTime?: string;
-  performerList?: Performer[];
-}
-
-export interface Performer {
-  performerId: string;
-  performerName: string;
-  performerAvatar: string;
-  videoCount: number;
+  id: string;
+  title: string;
+  thumbnail: string;
+  poster?: string;
+  rating: number;
+  genres: string[];
+  description: string;
+  status: 'Ongoing' | 'Completed';
+  year: number;
+  latestEpisode?: number;
+  streamUrl?: string; // m3u8 url
 }
 
 export interface Episode {
-  chapterId: string;
-  chapterIndex: number;
-  chapterName: string;
-  isCharge: number;
-  cdnList: CDN[];
+  id: string;
+  dramaId: string;
+  episodeNumber: number;
+  title: string;
+  streamUrl: string;
+  thumbnail?: string;
 }
 
-export interface CDN {
-  cdnDomain: string;
-  isDefault: number;
-  videoPathList: VideoPath[];
+export interface ApiResponse<T> {
+  data: T;
+  status: number;
+  message: string;
 }
 
-export interface VideoPath {
-  quality: number;
-  videoPath: string;
-  isDefault: number;
-  isEntry: number;
-  isVipEquity: number;
-}
+export type ViewMode = 'grid' | 'list';

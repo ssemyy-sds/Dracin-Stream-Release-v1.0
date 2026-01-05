@@ -376,3 +376,4 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster }) => {
     </div>
   );
 };
+export default VideoPlayer;
