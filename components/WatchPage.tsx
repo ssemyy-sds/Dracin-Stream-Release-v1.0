@@ -1,230 +1,222 @@
-
-import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { dramaService } from '../services/api';
+// src/components/WatchPage.tsx
+import { useEffect, useState } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { Drama, Episode } from '../types';
-import { VideoPlayer } from './VideoPlayer';
-import { PlayCircle, Share2, Heart, Plus, AlertCircle, RefreshCw } from 'lucide-react';
-import { Button } from './ui/Button';
+import { getDramaDetail, getAllEpisodes } from '../services/api';
+import VideoPlayer from './VideoPlayer';
 
-export const WatchPage: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
-  const [drama, setDrama] = useState<Drama | undefined>(undefined);
-  const [episodes, setEpisodes] = useState<Episode[]>([]);
-  const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
+export default function WatchPage() {
+  const { bookId } = useParams<{ bookId: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   
-  const [activeStreamUrl, setActiveStreamUrl] = useState<string>('');
+  const [drama, setDrama] = useState<Drama | null>(null);
+  const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingStream, setLoadingStream] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  const currentEpisodeId = searchParams.get('episode') || episodes[0]?.chapterId;
+  const currentEpisode = episodes.find(ep => ep.chapterId === currentEpisodeId);
 
   useEffect(() => {
-    const fetchData = async () => {
-      if (!id) return;
-      setLoading(true);
-      setError(null);
-      
-      try {
-          // 1. Fetch Drama Details (Metadata)
-          const dramaData = await dramaService.getById(id);
-          if (!dramaData) {
-              setError("Drama not found or API error.");
-              setLoading(false);
-              return;
-          }
-          setDrama(dramaData);
-
-          // 2. Fetch Episodes
-          const episodeData = await dramaService.getEpisodes(id);
-          setEpisodes(episodeData);
-          
-          if (episodeData.length > 0) {
-            setCurrentEpisode(episodeData[0]);
-          } else {
-              setError("No episodes available for this drama.");
-          }
-      } catch (e) {
-          console.error("Failed to load content", e);
-          setError("Failed to load content.");
-      } finally {
-          setLoading(false);
+    async function loadData() {
+      if (!bookId) {
+        setError('Book ID is required');
+        setLoading(false);
+        return;
       }
-    };
-    fetchData();
-  }, [id]);
 
-  // Effect: Resolve Stream URL
-  useEffect(() => {
-      const fetchStream = async () => {
-          if (!currentEpisode || !drama) return;
+      try {
+        setLoading(true);
+        setError(null);
 
-          // PRIORITY 1: Check if streamUrl is already present in the episode object
-          if (currentEpisode.streamUrl && currentEpisode.streamUrl.length > 10) {
-              console.log("Using direct stream from list:", currentEpisode.streamUrl);
-              setActiveStreamUrl(currentEpisode.streamUrl);
-              return;
-          }
+        // Fetch drama detail and episodes in parallel
+        const [dramaData, episodesData] = await Promise.all([
+          getDramaDetail(bookId),
+          getAllEpisodes(bookId)
+        ]);
 
-          // PRIORITY 2: Fetch on-demand (Fallback)
-          setLoadingStream(true);
-          setActiveStreamUrl('');
+        console.log('Drama loaded:', dramaData);
+        console.log('Episodes loaded:', episodesData);
 
-          try {
-              const url = await dramaService.getStreamUrl(drama.id, currentEpisode.episodeNumber);
-              if (url) {
-                  setActiveStreamUrl(url);
-              } else {
-                  console.warn("No stream URL found for", drama.id, currentEpisode.episodeNumber);
-              }
-          } catch (e) {
-              console.error("Error fetching stream URL", e);
-          } finally {
-              setLoadingStream(false);
-          }
-      };
+        setDrama(dramaData);
+        setEpisodes(episodesData);
 
-      fetchStream();
-  }, [currentEpisode, drama]);
+        // Set first episode as default if no episode selected
+        if (!currentEpisodeId && episodesData.length > 0) {
+          setSearchParams({ episode: episodesData[0].chapterId });
+        }
+      } catch (err) {
+        console.error('Error loading watch page:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load drama');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadData();
+  }, [bookId]);
+
+  const handleEpisodeSelect = (chapterId: string) => {
+    setSearchParams({ episode: chapterId });
+  };
+
+  // Get video URL from current episode
+  const videoUrl = currentEpisode?.cdnList?.[0]?.videoPathList?.find(
+    v => v.isDefault === 1
+  )?.videoPath || currentEpisode?.cdnList?.[0]?.videoPathList?.[0]?.videoPath;
 
   if (loading) {
     return (
-        <div className="min-h-screen bg-black flex items-center justify-center">
-          <div className="w-12 h-12 border-4 border-brand-orange border-t-transparent rounded-full animate-spin"></div>
+      <div className="min-h-screen bg-ultra-dark flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-orange mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading drama...</p>
         </div>
-      );
+      </div>
+    );
   }
 
   if (error || !drama) {
-      return (
-          <div className="min-h-screen bg-black flex flex-col items-center justify-center text-white gap-4">
-              <AlertCircle className="h-12 w-12 text-red-500" />
-              <h2 className="text-xl font-bold">Oops! Something went wrong.</h2>
-              <p className="text-gray-400">{error || "Could not load drama details."}</p>
-              <Button onClick={() => window.location.reload()} className="gap-2">
-                  <RefreshCw className="h-4 w-4" /> Retry
-              </Button>
-          </div>
-      );
+    return (
+      <div className="min-h-screen bg-ultra-dark flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-500 mb-4">{error || 'Drama not found'}</p>
+          <a href="/" className="text-brand-orange hover:underline">
+            Back to Home
+          </a>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-brand-black pt-16">
-      {/* Video Section */}
-      <div className="w-full bg-black shadow-2xl relative aspect-video md:aspect-auto md:h-[60vh] lg:h-[70vh]">
-        <div className="w-full h-full mx-auto">
-           {loadingStream ? (
-               <div className="w-full h-full flex flex-col items-center justify-center bg-gray-900 text-white gap-3">
-                   <div className="w-10 h-10 border-4 border-brand-orange border-t-transparent rounded-full animate-spin"></div>
-                   <p className="text-sm font-medium">Loading Episode {currentEpisode?.episodeNumber}...</p>
-               </div>
-           ) : activeStreamUrl ? (
-              <VideoPlayer 
-                src={activeStreamUrl} 
-                poster={drama.poster}
-              />
-           ) : (
-               <div className="w-full h-full bg-gray-900 flex flex-col items-center justify-center text-gray-500 gap-2 p-4 text-center">
-                   <AlertCircle className="h-10 w-10 text-gray-600" />
-                   <p className="font-medium text-white">Stream not available</p>
-                   <p className="text-xs">Server might be busy or link expired. Try another episode.</p>
-               </div>
-           )}
-        </div>
+    <div className="min-h-screen bg-ultra-dark pt-16">
+      {/* Video Player */}
+      <div className="w-full bg-black">
+        {videoUrl ? (
+          <VideoPlayer src={videoUrl} />
+        ) : (
+          <div className="aspect-video flex items-center justify-center bg-gray-900">
+            <p className="text-gray-400">No video available</p>
+          </div>
+        )}
       </div>
 
-      {/* Info & Episodes */}
-      <div className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Left Col: Details */}
-        <div className="lg:col-span-2 space-y-6">
-            <div>
-                <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">{drama.title}</h1>
-                <div className="flex items-center gap-4 text-sm text-gray-400 mb-4">
-                    <span>{drama.year}</span>
-                    <span className="border border-gray-600 px-1 rounded text-xs">{drama.status}</span>
-                    <div className="flex gap-1">
-                        {drama.genres.slice(0, 3).map((g, i) => (
-                             <span key={i} className="text-gray-400">{g}{i < 2 && i < drama.genres.length -1 ? ',' : ''}</span>
-                        ))}
-                    </div>
+      {/* Drama Info & Episodes */}
+      <div className="container mx-auto px-4 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Drama Info */}
+          <div className="lg:col-span-2">
+            <h1 className="text-3xl font-bold text-white mb-4">
+              {drama.bookName}
+            </h1>
+            
+            <div className="flex gap-4 mb-6">
+              <img
+                src={drama.cover}
+                alt={drama.bookName}
+                className="w-32 h-48 object-cover rounded-lg"
+                onError={(e) => {
+                  e.currentTarget.src = 'https://placehold.co/300x450/1e1e1e/FFF?text=No+Image';
+                }}
+              />
+              
+              <div className="flex-1">
+                <div className="flex gap-4 mb-4">
+                  <div>
+                    <p className="text-gray-400 text-sm">Views</p>
+                    <p className="text-white font-semibold">
+                      {drama.viewCount.toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-gray-400 text-sm">Followers</p>
+                    <p className="text-white font-semibold">
+                      {drama.followCount.toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-gray-400 text-sm">Episodes</p>
+                    <p className="text-white font-semibold">
+                      {drama.chapterCount}
+                    </p>
+                  </div>
                 </div>
                 
-                {currentEpisode && (
-                    <div className="mb-6 p-4 bg-white/5 rounded-lg border border-white/10">
-                        <h2 className="text-lg font-semibold text-brand-orange mb-1">
-                            {currentEpisode.title}
-                        </h2>
-                        <p className="text-gray-400 text-sm">
-                            {loadingStream ? 'Loading source...' : 'Now Playing'}
-                        </p>
-                    </div>
+                {drama.tags && drama.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {drama.tags.map((tag, index) => (
+                      <span
+                        key={index}
+                        className="px-3 py-1 bg-gray-800 text-gray-300 rounded-full text-sm"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
                 )}
-
-                <div className="flex gap-4 mb-6">
-                    <Button variant="secondary" className="flex-1 gap-2">
-                        <Plus className="h-4 w-4" /> My List
-                    </Button>
-                    <Button variant="secondary" className="flex-1 gap-2">
-                        <Heart className="h-4 w-4" /> Like
-                    </Button>
-                    <Button variant="secondary" className="flex-1 gap-2">
-                        <Share2 className="h-4 w-4" /> Share
-                    </Button>
-                </div>
-
-                <div className="text-gray-300 leading-relaxed">
-                    <h3 className="text-white font-bold mb-2">Synopsis</h3>
-                    <p>{drama.description}</p>
-                </div>
+              </div>
             </div>
-        </div>
 
-        {/* Right Col: Episode List */}
-        <div className="lg:col-span-1">
-            <h3 className="text-xl font-bold text-white mb-4">Episodes ({episodes.length})</h3>
-            <div className="flex flex-col gap-2 max-h-[600px] overflow-y-auto no-scrollbar pr-2">
-                {episodes.map((ep) => (
-                    <div 
-                        key={ep.id}
-                        onClick={() => setCurrentEpisode(ep)}
-                        className={`flex gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
-                            currentEpisode?.id === ep.id 
-                            ? 'bg-white/10 border-l-4 border-brand-orange' 
-                            : 'hover:bg-white/5 bg-transparent'
-                        }`}
-                    >
-                        <div className="relative w-32 aspect-video flex-shrink-0 bg-gray-800 rounded overflow-hidden">
-                            <img 
-                                src={ep.thumbnail || drama.thumbnail} 
-                                className="w-full h-full object-cover opacity-70" 
-                                alt={ep.title} 
-                                loading="lazy" 
-                            />
-                            {currentEpisode?.id === ep.id && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                                    <PlayCircle className="h-8 w-8 text-brand-orange fill-black" />
-                                </div>
-                            )}
-                        </div>
-                        <div className="flex flex-col justify-center">
-                            <h4 className={`font-medium text-sm ${currentEpisode?.id === ep.id ? 'text-brand-orange' : 'text-white'}`}>
-                                Episode {ep.episodeNumber}
-                            </h4>
-                            <p className="text-xs text-gray-400 line-clamp-2">
-                                {drama.title}
-                            </p>
-                        </div>
+            <div>
+              <h2 className="text-xl font-bold text-white mb-3">Synopsis</h2>
+              <p className="text-gray-300 leading-relaxed">
+                {drama.introduction}
+              </p>
+            </div>
+
+            {drama.performerList && drama.performerList.length > 0 && (
+              <div className="mt-6">
+                <h2 className="text-xl font-bold text-white mb-3">Cast</h2>
+                <div className="flex gap-4 overflow-x-auto">
+                  {drama.performerList.map((performer) => (
+                    <div key={performer.performerId} className="flex-shrink-0">
+                      <img
+                        src={performer.performerAvatar}
+                        alt={performer.performerName}
+                        className="w-16 h-16 rounded-full object-cover mb-2"
+                        onError={(e) => {
+                          e.currentTarget.src = 'https://placehold.co/100x100/1e1e1e/FFF?text=?';
+                        }}
+                      />
+                      <p className="text-sm text-white text-center">
+                        {performer.performerName}
+                      </p>
                     </div>
-                ))}
-                {episodes.length === 0 && (
-                     <div className="p-4 text-center text-gray-500 text-sm">
-                         No episodes available.
-                     </div>
-                )}
-            </div>
-        </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
+          {/* Episode List */}
+          <div className="lg:col-span-1">
+            <h2 className="text-xl font-bold text-white mb-4">
+              Episodes ({episodes.length})
+            </h2>
+            <div className="space-y-2 max-h-[600px] overflow-y-auto">
+              {episodes.map((episode) => (
+                <button
+                  key={episode.chapterId}
+                  onClick={() => handleEpisodeSelect(episode.chapterId)}
+                  className={`w-full text-left p-4 rounded-lg transition ${
+                    currentEpisodeId === episode.chapterId
+                      ? 'bg-brand-orange text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  <p className="font-semibold">{episode.chapterName}</p>
+                  {episode.isCharge === 1 && (
+                    <span className="text-xs bg-yellow-500 text-black px-2 py-1 rounded mt-1 inline-block">
+                      Premium
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
-};
+}
