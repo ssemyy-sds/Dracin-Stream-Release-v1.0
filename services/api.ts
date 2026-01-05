@@ -123,15 +123,12 @@ const fetchFromApi = async (endpoint: string, params: Record<string, string> = {
 // --- Service Implementation ---
 
 const getById = async (bookId: string): Promise<Drama | undefined> => {
-    // 1. Fetch Detail (Target: /detail?bookId=...)
     const json = await fetchFromApi('detail', { bookId });
     
-    // CRITICAL: Handle Nested Structure { data: { book: ... } }
     if (json && json.data && json.data.book) {
         return normalizeDrama(json.data.book);
     }
     
-    // Fallback: Check if it's flat structure or secondary provider
     if (json && (json.bookId || json.bookName)) {
         return normalizeDrama(json);
     }
@@ -140,10 +137,8 @@ const getById = async (bookId: string): Promise<Drama | undefined> => {
 };
 
 const getEpisodes = async (bookId: string): Promise<Episode[]> => {
-    // 1. Fetch Episodes (Target: /allepisode?bookId=...)
     const json = await fetchFromApi('allepisode', { bookId });
 
-    // CRITICAL: Handle Direct Array Structure [...]
     let rawList = [];
     if (Array.isArray(json)) {
         rawList = json;
@@ -151,24 +146,19 @@ const getEpisodes = async (bookId: string): Promise<Episode[]> => {
         rawList = json.data;
     }
 
-    // Map using the array index as fallback
-    // FIX: Removed .filter(ep => ep.chapterIndex > 0) to allow Episode 1 (often index 0)
     const episodes = rawList.map((item, index) => normalizeEpisode(item, index));
     
     return episodes.sort((a, b) => a.chapterIndex - b.chapterIndex);
 };
 
 const getStreamUrl = async (bookId: string, episode: number): Promise<string | null> => {
-    // Since we extract videoUrl in getEpisodes, this might be redundant, 
-    // but kept for specific 'play' endpoint if needed.
     const json = await fetchFromApi('play', { bookId, episode: episode.toString() });
     if (json && json.url) return fixUrl(json.url);
     return null;
 };
 
 const getTrending = async (): Promise<Drama[]> => {
-    const json = await fetchFromApi('trending'); // or /search/dramabox action=home
-    // Handle potential response variations
+    const json = await fetchFromApi('trending');
     const list = Array.isArray(json) ? json : (json?.data || []);
     return list.map(normalizeDrama);
 };
@@ -180,18 +170,38 @@ const getList = async (endpoint: string, params: any = {}): Promise<Drama[]> => 
     return list.map(normalizeDrama);
 };
 
+// Updated Category Handlers
+const getForYou = () => getList('foryou');
+const getLatest = () => getList('latest');
+const getVip = (page: number = 1) => getList('vip', { page: page.toString() });
+
+// Updated Dub Indo to accept pagination and classify
+const getDubIndo = (page: number = 1, classify: string = 'terpopuler') => {
+    return getList('dubindo', { 
+        classify: classify, 
+        page: page.toString() 
+    });
+};
+
 export const dramaService = {
     getById,
     getEpisodes,
     getStreamUrl,
     getTrending,
     search: (q: string) => getList('search', { query: q }),
-    getForYou: () => getList('foryou'),
-    getLatest: () => getList('latest'),
-    getVip: () => getList('vip'),
-    getDubIndo: () => getList('dubindo'),
-    getByCategory: (cat: string) => {
-        if (cat === 'trending') return getTrending();
-        return getList(cat); // simplified
+    getForYou,
+    getLatest,
+    getVip,
+    getDubIndo,
+    // Updated getByCategory to pass params down
+    getByCategory: (cat: string, page: number = 1, classify: string = 'terpopuler') => {
+        switch (cat.toLowerCase()) {
+            case 'foryou': return getForYou();
+            case 'trending': return getTrending();
+            case 'latest': return getLatest();
+            case 'vip': return getVip(page);
+            case 'dubindo': return getDubIndo(page, classify);
+            default: return getTrending();
+        }
     }
 };
