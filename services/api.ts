@@ -75,15 +75,15 @@ const normalizeDrama = (item: any): Drama => {
   // ID Mapping: Priority to bookId
   const id = item.bookId?.toString() || item.book_id?.toString() || item.id?.toString() || crypto.randomUUID();
   
-  // Title Mapping: bookName is the specific key from /detail
+  // Title Mapping: STRICT priority to bookName
   const title = item.bookName || item.book_name || item.title || item.name || 'Unknown Title';
   
-  // Image Mapping 
+  // Image Mapping: STRICT priority to cover
   const rawThumb = item.cover || item.coverWap || item.poster || item.thumb || item.thumbnail || item.image;
   const rawPoster = item.cover || item.coverWap || item.poster || item.image;
   
-  // Description Mapping: 'intro' is the key from /detail
-  const description = item.intro || item.introduction || item.synopsis || item.description || 'No synopsis available.';
+  // Description Mapping: STRICT priority to introduction
+  const description = item.introduction || item.intro || item.synopsis || item.description || 'No synopsis available.';
 
   // Genres/Tags Mapping
   let genres = ['Drama'];
@@ -122,7 +122,6 @@ const normalizeEpisode = (item: any, dramaId: string, index?: number): Episode =
   let epNum = 0;
   
   // 1. Try to extract explicit number from Title/ChapterName (e.g., "EP 1" -> 1)
-  // This solves the issue where chapterIndex is 0 but it's actually Episode 1
   const name = item.title || item.chapterName || item.name || '';
   const match = name.match(/(?:EP|Episode|Chapter)\s*(\d+)/i) || name.match(/^(\d+)$/);
   
@@ -133,7 +132,6 @@ const normalizeEpisode = (item: any, dramaId: string, index?: number): Episode =
     epNum = parseInt(item.episode || item.chapterIndex || 0);
     
     // 3. Fix 0-based index if no name match found
-    // If epNum is 0, it is likely index 0 which corresponds to Ep 1
     if (epNum === 0 && (item.chapterIndex === 0 || index === 0)) {
        epNum = 1;
     }
@@ -165,13 +163,16 @@ const normalizeEpisode = (item: any, dramaId: string, index?: number): Episode =
       }
   }
 
+  // THUMBNAIL LOGIC: Prioritize 'cover'
+  const epThumb = item.cover || item.thumbnail || item.image;
+
   return {
     id: item.id?.toString() || item.chapterId?.toString() || `ep-${dramaId}-${epNum}`,
     dramaId: dramaId,
     episodeNumber: epNum,
     title: item.title || item.chapterName || `Episode ${epNum}`,
     streamUrl: fixUrl(streamUrl) || '', 
-    thumbnail: item.thumbnail || item.cover
+    thumbnail: fixUrl(epThumb)
   };
 };
 
