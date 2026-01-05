@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Drama } from '../types';
 import { Play, Image as ImageIcon } from 'lucide-react';
@@ -50,7 +51,6 @@ export const DramaCard: React.FC<DramaCardProps> = ({ drama, featured = false })
         <div className="absolute bottom-0 left-0 right-0 p-3 z-20">
           <h3 className="text-white font-semibold truncate text-sm md:text-base drop-shadow-md">{drama.title}</h3>
           <div className="flex items-center gap-2 mt-1">
-            <span className="text-green-400 text-xs font-bold">{drama.rating} Match</span>
             <span className="text-gray-300 text-xs border border-gray-500 px-1 rounded">{drama.year}</span>
             <span className="text-gray-300 text-xs truncate max-w-[100px]">{drama.genres[0]}</span>
           </div>
