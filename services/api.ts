@@ -125,7 +125,24 @@ const normalizeEpisode = (item: any, dramaId: string, index?: number): Episode =
   };
 };
 
-// --- Standalone Functions (to avoid circular dependencies in the export object) ---
+// --- Explicit Interface Definition ---
+// This prevents TS2339 errors by explicitly declaring the shape of the service object.
+export interface DramaApiService {
+  getWithFallback(primaryEndpoint: string): Promise<Drama[]>;
+  getForYou(): Promise<Drama[]>;
+  getLatest(): Promise<Drama[]>;
+  getTrending(): Promise<Drama[]>;
+  getVip(): Promise<Drama[]>;
+  getDubIndo(): Promise<Drama[]>;
+  getByCategory(category: string): Promise<Drama[]>;
+  getById(id: string): Promise<Drama | undefined>;
+  search(query: string): Promise<Drama[]>;
+  getEpisodes(dramaId: string): Promise<Episode[]>;
+  getStreamUrl(bookId: string, episode: number): Promise<string | null>;
+  getRandom(): Promise<Drama[]>;
+}
+
+// --- Standalone Functions ---
 
 const getWithFallback = async (primaryEndpoint: string): Promise<Drama[]> => {
     // 1. Try Primary
@@ -252,9 +269,9 @@ const getRandom = async (): Promise<Drama[]> => {
   return data.map(normalizeDrama);
 };
 
-// --- Export ---
+// --- Export with Explicit Type ---
 
-export const dramaService = {
+export const dramaService: DramaApiService = {
   getWithFallback,
   getForYou,
   getLatest,
