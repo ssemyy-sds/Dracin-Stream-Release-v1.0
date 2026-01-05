@@ -13,9 +13,7 @@ export const WatchPage: React.FC = () => {
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
   
-  // New state for the resolved stream URL
   const [activeStreamUrl, setActiveStreamUrl] = useState<string>('');
-  
   const [loading, setLoading] = useState(true);
   const [loadingStream, setLoadingStream] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,27 +25,28 @@ export const WatchPage: React.FC = () => {
       setError(null);
       
       try {
+          // 1. Fetch Drama Details (Metadata)
           const dramaData = await dramaService.getById(id);
-          
           if (!dramaData) {
               setError("Drama not found or API error.");
               setLoading(false);
               return;
           }
-
           setDrama(dramaData);
 
+          // 2. Fetch Episodes
+          // This call now includes the streamUrl logic inside (checking 720p cdnList)
           const episodeData = await dramaService.getEpisodes(id);
           setEpisodes(episodeData);
           
           if (episodeData.length > 0) {
             setCurrentEpisode(episodeData[0]);
           } else {
-              // Should be handled by virtual episodes in service, but just in case
+              // Should use virtual fallback from service, but just in case
               setError("No episodes available for this drama.");
           }
       } catch (e) {
-          console.error("Failed to load drama details", e);
+          console.error("Failed to load content", e);
           setError("Failed to load content.");
       } finally {
           setLoading(false);
@@ -56,22 +55,24 @@ export const WatchPage: React.FC = () => {
     fetchData();
   }, [id]);
 
-  // Effect to fetch stream URL when current episode changes
+  // Effect: Resolve Stream URL
   useEffect(() => {
       const fetchStream = async () => {
           if (!currentEpisode || !drama) return;
 
-          // If the episode already has a stream URL (from primary API), use it
+          // PRIORITY 1: Check if streamUrl is already present in the episode object
+          // This should be true for /allepisode responses that were successfully parsed
           if (currentEpisode.streamUrl && currentEpisode.streamUrl.length > 10) {
+              console.log("Using direct stream from list:", currentEpisode.streamUrl);
               setActiveStreamUrl(currentEpisode.streamUrl);
               return;
           }
 
+          // PRIORITY 2: Fetch on-demand (Fallback)
           setLoadingStream(true);
-          setActiveStreamUrl(''); // Reset while loading
+          setActiveStreamUrl('');
 
           try {
-              // Fetch from service
               const url = await dramaService.getStreamUrl(drama.id, currentEpisode.episodeNumber);
               if (url) {
                   setActiveStreamUrl(url);
