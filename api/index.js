@@ -1,24 +1,23 @@
-
-// Vercel Serverless Function (Node.js)
-// Acts as a proxy to bypass CORS in production
-
+// api/index.js
 export default async function handler(request, response) {
   const PRIMARY_API = process.env.UPSTREAM_API_URL;
-  // Fix: Append /api to the base URL so that downstream paths (e.g., search/dramabox) resolve correctly to https://api.gimita.id/api/search/dramabox
   const SECONDARY_API = 'https://api.gimita.id/api';
 
-  // FIX: [DEP0169] DeprecationWarning mitigation.
-  const urlParts = (request.url || '').split('?');
-  const pathname = urlParts[0];
-  const queryString = urlParts.length > 1 ? urlParts[1] : '';
-  const searchParams = new URLSearchParams(queryString);
+  // Enable CORS
+  response.setHeader('Access-Control-Allow-Origin', '*');
+  response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
+  if (request.method === 'OPTIONS') {
+    return response.status(200).end();
+  }
+
+  const { pathname, searchParams } = new URL(request.url, `https://${request.headers.host}`);
+  
   let path = searchParams.get('path');
   const provider = searchParams.get('provider');
   
-  // Robust path extraction
   if (!path) {
-    // If request is /api/search/dramabox, split gets ['', 'search/dramabox']
     const splitPath = pathname.split('/api/');
     if (splitPath.length > 1) {
       path = splitPath[1];
@@ -29,26 +28,23 @@ export default async function handler(request, response) {
     return response.status(400).json({ 
       error: 'Path is required', 
       received_url: request.url,
-      hint: 'Ensure you are calling /api/endpoint_name'
+      pathname,
+      searchParams: Object.fromEntries(searchParams)
     });
   }
 
-  // Determine Base URL
-  // Remove trailing slash to prevent double slashes when joining with path
-  const baseUrl = (provider === 'secondary' ? SECONDARY_API : PRIMARY_API).replace(/\/$/, '');
+  // Build target URL
+  const baseApi = provider === 'secondary' ? SECONDARY_API : PRIMARY_API;
+  const targetUrl = new URL(path, baseApi);
   
-  // Clean path: Ensure no leading slash in path to avoid double slash issues
-  const cleanPathParam = (Array.isArray(path) ? path.join('/') : path).replace(/^\//, '');
-  
-  // Construct target URL
-  const targetUrl = new URL(`${baseUrl}/${cleanPathParam}`);
-  
-  // Forward all other query parameters
+  // Forward query params
   searchParams.forEach((value, key) => {
     if (key !== 'path' && key !== 'provider') {
       targetUrl.searchParams.append(key, value);
     }
   });
+
+  console.log('[PROXY] Forwarding:', targetUrl.toString());
 
   try {
     const apiResponse = await fetch(targetUrl.toString(), {
@@ -58,37 +54,18 @@ export default async function handler(request, response) {
       }
     });
 
-    // Handle non-JSON or error responses from upstream
-    const contentType = apiResponse.headers.get('content-type');
-    let data;
+    const data = await apiResponse.json();
     
-    if (contentType && contentType.includes('application/json')) {
-      data = await apiResponse.json();
-    } else {
-      // Silently return empty on non-JSON to allow client fallback logic to proceed
-      return response.status(200).json({ data: [], error: 'Upstream returned non-JSON' });
-    }
-    
-    // Set CORS headers
-    response.setHeader('Access-Control-Allow-Credentials', 'true');
-    response.setHeader('Access-Control-Allow-Origin', '*'); 
-    response.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
-    response.setHeader(
-      'Access-Control-Allow-Headers',
-      'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-    );
-
-    if (request.method === 'OPTIONS') {
-      return response.status(200).end();
-    }
+    console.log('[PROXY] Response status:', apiResponse.status);
+    console.log('[PROXY] Response preview:', JSON.stringify(data).substring(0, 200));
 
     return response.status(apiResponse.status).json(data);
   } catch (error) {
-    console.error('Proxy Error:', error.message);
-    return response.status(502).json({ 
-      error: 'Bad Gateway', 
-      message: 'Failed to communicate with upstream API',
-      details: error.message
+    console.error('[PROXY] Error:', error);
+    return response.status(500).json({ 
+      error: 'Proxy request failed',
+      message: error.message,
+      target_url: targetUrl.toString()
     });
   }
 }
