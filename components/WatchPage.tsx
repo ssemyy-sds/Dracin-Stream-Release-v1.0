@@ -35,14 +35,12 @@ export const WatchPage: React.FC = () => {
           setDrama(dramaData);
 
           // 2. Fetch Episodes
-          // This call now includes the streamUrl logic inside (checking 720p cdnList)
           const episodeData = await dramaService.getEpisodes(id);
           setEpisodes(episodeData);
           
           if (episodeData.length > 0) {
             setCurrentEpisode(episodeData[0]);
           } else {
-              // Should use virtual fallback from service, but just in case
               setError("No episodes available for this drama.");
           }
       } catch (e) {
@@ -61,7 +59,6 @@ export const WatchPage: React.FC = () => {
           if (!currentEpisode || !drama) return;
 
           // PRIORITY 1: Check if streamUrl is already present in the episode object
-          // This should be true for /allepisode responses that were successfully parsed
           if (currentEpisode.streamUrl && currentEpisode.streamUrl.length > 10) {
               console.log("Using direct stream from list:", currentEpisode.streamUrl);
               setActiveStreamUrl(currentEpisode.streamUrl);
@@ -143,7 +140,6 @@ export const WatchPage: React.FC = () => {
             <div>
                 <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">{drama.title}</h1>
                 <div className="flex items-center gap-4 text-sm text-gray-400 mb-4">
-                    <span className="text-green-400 font-bold">{drama.rating} Match</span>
                     <span>{drama.year}</span>
                     <span className="border border-gray-600 px-1 rounded text-xs">{drama.status}</span>
                     <div className="flex gap-1">
