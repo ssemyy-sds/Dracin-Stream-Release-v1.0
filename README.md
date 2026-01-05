@@ -34,7 +34,7 @@ Dracin Stream is a premium, mobile-first web application for streaming Chinese D
 3. **Setup Environment Variables**
    Create a `.env` file in the root directory:
    ```env
-   UPSTREAM_API_URL=https://api.sansekai.my.id/api/dramabox
+   UPSTREAM_API_URL=https://your.api.com
    ```
 
 4. **Run Local Development**
@@ -50,7 +50,7 @@ Dracin Stream is a premium, mobile-first web application for streaming Chinese D
 3. In the Vercel Project Settings, go to **Environment Variables**.
 4. Add the following variable:
    - **Key**: `UPSTREAM_API_URL`
-   - **Value**: `https://api.sansekai.my.id/api/dramabox`
+   - **Value**: `https://your.api.com`
 5. Click **Deploy**.
 
 ## 🔒 Security Note
