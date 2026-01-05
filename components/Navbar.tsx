@@ -1,7 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
-import { Search, Bell, Menu, X, PlayCircle, Star, TrendingUp, Clock, Globe } from 'lucide-react';
+import { Search, Bell, Menu, X, PlayCircle, TrendingUp, Clock, Globe } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Button } from './ui/Button';
 
 export const Navbar: React.FC = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -27,7 +27,7 @@ export const Navbar: React.FC = () => {
   };
 
   const menuItems = [
-    { label: 'For You', path: '/category/foryou', icon: Star },
+    { label: 'For You', path: '/category/foryou', icon: PlayCircle },
     { label: 'Trending', path: '/category/trending', icon: TrendingUp },
     { label: 'Latest', path: '/category/latest', icon: Clock },
     { label: 'VIP', path: '/category/vip', icon: PlayCircle },
@@ -37,15 +37,15 @@ export const Navbar: React.FC = () => {
   return (
     <nav 
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        isScrolled || isMobileMenuOpen ? 'bg-black/90 backdrop-blur-md shadow-lg' : 'bg-gradient-to-b from-black/80 to-transparent'
+        isScrolled || isMobileMenuOpen ? 'bg-black/90 backdrop-blur-md shadow-lg border-b border-white/5' : 'bg-gradient-to-b from-black/80 to-transparent'
       }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <div className="flex-shrink-0 flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
-            <PlayCircle className="h-8 w-8 text-brand-orange" />
-            <span className="text-xl font-bold tracking-tight text-white">DRACIN</span>
+          <div className="flex-shrink-0 flex items-center gap-2 cursor-pointer group" onClick={() => navigate('/')}>
+            <PlayCircle className="h-8 w-8 text-brand-orange group-hover:scale-110 transition-transform duration-300" />
+            <span className="text-xl font-bold tracking-tight text-white group-hover:text-brand-orange transition-colors">DRACIN</span>
           </div>
 
           {/* Desktop Nav */}
@@ -68,17 +68,16 @@ export const Navbar: React.FC = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             </form>
             <Bell className="h-5 w-5 text-gray-300 hover:text-white cursor-pointer transition-colors" />
-            <div className="h-8 w-8 rounded bg-brand-orange flex items-center justify-center font-bold text-white text-xs">
+            <div className="h-8 w-8 rounded bg-gradient-to-br from-brand-orange to-red-600 flex items-center justify-center font-bold text-white text-xs shadow-lg">
               JD
             </div>
           </div>
 
-          {/* Mobile Menu Button */}
+          {/* Mobile Menu Button - REMOVED SEARCH ICON HERE */}
           <div className="md:hidden flex items-center gap-4">
-             <Search className="h-5 w-5 text-white" onClick={() => navigate('/search')} />
              <button 
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="text-gray-300 hover:text-white"
+              className="text-gray-300 hover:text-white p-1"
             >
               {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
             </button>
@@ -88,21 +87,23 @@ export const Navbar: React.FC = () => {
 
       {/* Mobile Menu */}
       {isMobileMenuOpen && (
-        <div className="md:hidden bg-black border-t border-white/10 absolute w-full min-h-screen">
-          <div className="px-4 py-4 space-y-4">
-             <form onSubmit={handleSearch} className="relative mb-6">
+        <div className="md:hidden bg-brand-black/95 backdrop-blur-xl border-t border-white/10 absolute w-full min-h-screen animate-in slide-in-from-top-5 duration-200">
+          <div className="px-4 py-6 space-y-6">
+             <form onSubmit={handleSearch} className="relative">
                 <input 
                   type="text" 
                   placeholder="Search drama..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-white/10 border-transparent rounded-lg py-3 pl-10 pr-4 text-white placeholder-gray-400 focus:outline-none focus:bg-white/20 text-base"
+                  className="w-full bg-white/10 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-white placeholder-gray-400 focus:outline-none focus:bg-white/20 focus:border-brand-orange transition-all text-base"
                 />
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
             </form>
+
             <div className="flex flex-col gap-2">
-              <Link to="/" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center gap-3 p-3 rounded-lg hover:bg-white/5 text-base font-medium text-white">
-                <span className="text-gray-400">Home</span>
+              <Link to="/" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center gap-4 p-3 rounded-xl hover:bg-white/10 text-base font-medium text-white transition-colors">
+                <PlayCircle className="h-5 w-5 text-gray-400" />
+                <span>Home</span>
               </Link>
               
               {menuItems.map((item) => (
@@ -110,7 +111,7 @@ export const Navbar: React.FC = () => {
                   key={item.label}
                   to={item.path} 
                   onClick={() => setIsMobileMenuOpen(false)} 
-                  className="flex items-center gap-3 p-3 rounded-lg hover:bg-white/5 transition-colors"
+                  className="flex items-center gap-4 p-3 rounded-xl hover:bg-white/10 transition-colors"
                 >
                   <item.icon className="h-5 w-5 text-brand-orange" />
                   <span className="text-base font-medium text-gray-200">{item.label}</span>
