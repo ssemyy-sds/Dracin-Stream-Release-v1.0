@@ -75,11 +75,28 @@ const normalizeDrama = (item: any): Drama => {
     };
 };
 
-const normalizeEpisode = (item: any): Episode => {
+const normalizeEpisode = (item: any, arrayIndex: number): Episode => {
+    // Priority: chapterIndex -> episode -> arrayIndex
+    let rawIndex = item.chapterIndex;
+    if (rawIndex === undefined || rawIndex === null) rawIndex = item.episode;
+    
+    let indexVal = parseInt(rawIndex);
+    
+    // Fallback: If index is NaN, use the array index + 1
+    if (isNaN(indexVal)) {
+        indexVal = arrayIndex + 1;
+    }
+
+    // Determine Title
+    // If chapterName is empty, use "Episode {index}"
+    // Note: If indexVal is 0, we might want to display it as 1 in the title if the name is missing
+    const displayNum = indexVal === 0 ? 1 : indexVal;
+    const title = item.chapterName || item.title || `Episode ${displayNum}`;
+
     return {
         chapterId: item.chapterId?.toString() || crypto.randomUUID(),
-        chapterIndex: parseInt(item.chapterIndex || item.episode || 0),
-        chapterName: item.chapterName || item.title || `Episode ${item.chapterIndex}`,
+        chapterIndex: indexVal,
+        chapterName: title,
         cover: fixUrl(item.cover || item.image),
         videoUrl: extractVideoUrl(item.cdnList || []) || fixUrl(item.url || item.stream_url)
     };
@@ -134,8 +151,10 @@ const getEpisodes = async (bookId: string): Promise<Episode[]> => {
         rawList = json.data;
     }
 
-    // Map and Filter
-    const episodes = rawList.map(normalizeEpisode).filter(ep => ep.chapterIndex > 0);
+    // Map using the array index as fallback
+    // FIX: Removed .filter(ep => ep.chapterIndex > 0) to allow Episode 1 (often index 0)
+    const episodes = rawList.map((item, index) => normalizeEpisode(item, index));
+    
     return episodes.sort((a, b) => a.chapterIndex - b.chapterIndex);
 };
 
