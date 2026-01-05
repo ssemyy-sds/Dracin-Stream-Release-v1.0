@@ -45,7 +45,6 @@ const fetchFromApi = async (endpoint: string, params: Record<string, string> = {
 
     // Silent Fail on 400/404 to trigger fallback mechanism gracefully
     if (!response.ok) {
-        // We log strict errors but suppress 400/404 which are common in API failover scenarios
         if (response.status !== 404 && response.status !== 400) {
             console.warn(`API Error ${response.status} for ${endpoint} (${provider})`);
         }
@@ -62,26 +61,39 @@ const fetchFromApi = async (endpoint: string, params: Record<string, string> = {
     
     return result;
   } catch (error) {
-    // Network errors usually mean we should try fallback
     return null;
   }
 };
 
 // Adapter: Robust Normalization for multiple API sources
 const normalizeDrama = (item: any): Drama => {
-  // ID Mapping
+  // ID Mapping: bookId is priority for Dramabox API
   const id = item.bookId?.toString() || item.id?.toString() || item.link || crypto.randomUUID();
   
-  // Title Mapping
-  const title = item.title || item.name || item.bookName || 'Unknown Title';
+  // Title Mapping: bookName is priority
+  const title = item.bookName || item.title || item.name || 'Unknown Title';
   
-  // Image Mapping (Aggressively check all possible fields including 'thumb' for Gimita API)
-  // Priority: cover -> poster -> thumb -> thumbnail -> image -> img -> url_img
-  const rawThumb = item.cover || item.poster || item.thumb || item.thumbnail || item.image || item.img || item.url_img;
+  // Image Mapping 
+  // Priority: coverWap (Dramabox) -> cover -> poster ...
+  const rawThumb = item.coverWap || item.cover || item.poster || item.thumb || item.thumbnail || item.image || item.img || item.url_img;
+  const rawPoster = item.coverWap || item.poster || item.cover || item.image || item.thumb || item.thumbnail || item.img;
   
-  // For poster, we try to find a high-res version, but fallback to thumb if needed
-  const rawPoster = item.poster || item.cover || item.image || item.thumb || item.thumbnail || item.img;
-  
+  // Description Mapping: introduction is priority
+  const description = item.introduction || item.intro || item.synopsis || item.description || item.desc || 'No synopsis available.';
+
+  // Genres/Tags Mapping: tags (Array) is priority
+  let genres = ['Drama'];
+  if (Array.isArray(item.tags) && item.tags.length > 0) {
+      genres = item.tags;
+  } else if (Array.isArray(item.genres)) {
+      genres = item.genres;
+  } else if (item.category) {
+      genres = [item.category];
+  }
+
+  // Episode Count
+  const latestEpisode = parseInt(item.chapterCount || item.latest_episode || item.total_episode || '0');
+
   // Placeholders
   const PLACEHOLDER_THUMB = 'https://placehold.co/300x450/1e1e1e/FFF?text=No+Image';
   const PLACEHOLDER_POSTER = 'https://placehold.co/1920x1080/1e1e1e/FFF?text=No+Poster';
@@ -92,22 +104,23 @@ const normalizeDrama = (item: any): Drama => {
     thumbnail: fixUrl(rawThumb) || PLACEHOLDER_THUMB,
     poster: fixUrl(rawPoster) || PLACEHOLDER_POSTER,
     rating: parseFloat(item.rating || item.score || '0') || 9.0,
-    genres: Array.isArray(item.genres) ? item.genres : (item.category ? [item.category] : ['Drama']),
-    description: item.intro || item.synopsis || item.description || item.desc || 'No synopsis available.',
+    genres: genres,
+    description: description,
     status: item.status || 'Ongoing',
     year: parseInt(item.year) || new Date().getFullYear(),
-    latestEpisode: parseInt(item.latest_episode || item.total_episode || '0'),
+    latestEpisode: latestEpisode,
     streamUrl: fixUrl(item.stream_url)
   };
 };
 
-const normalizeEpisode = (item: any, dramaId: string): Episode => {
+const normalizeEpisode = (item: any, dramaId: string, index?: number): Episode => {
+  const epNum = parseInt(item.episode || index || 0);
   return {
-    id: item.id?.toString() || `ep-${dramaId}-${item.episode || Math.random()}`,
+    id: item.id?.toString() || `ep-${dramaId}-${epNum}`,
     dramaId: dramaId,
-    episodeNumber: parseInt(item.episode) || 0,
-    title: item.title || `Episode ${item.episode}`,
-    streamUrl: item.url || item.stream_url || '',
+    episodeNumber: epNum,
+    title: item.title || `Episode ${epNum}`,
+    streamUrl: item.url || item.stream_url || '', // Might be empty initially
     thumbnail: item.thumbnail || item.cover
   };
 };
@@ -115,9 +128,6 @@ const normalizeEpisode = (item: any, dramaId: string): Episode => {
 // --- Service Methods with Fallback Logic ---
 
 export const dramaService = {
-  // Generic Fallback Handler for Lists
-  // 1. Try Primary Endpoint
-  // 2. If fail, Try Secondary "Home" Endpoint (since secondary serves mixed content)
   getWithFallback: async (primaryEndpoint: string): Promise<Drama[]> => {
       // 1. Try Primary
       let data = await fetchFromApi(primaryEndpoint);
@@ -127,14 +137,12 @@ export const dramaService = {
       }
 
       // 2. Try Secondary (Gimita)
-      // Path: /api/search/dramabox?action=home -> mapped via proxy
       data = await fetchFromApi('api/search/dramabox', { action: 'home' }, 'secondary');
 
       if (data && Array.isArray(data) && data.length > 0) {
           return data.map(normalizeDrama);
       }
 
-      // 3. Return empty array (No Mock Data)
       return [];
   },
 
@@ -173,7 +181,6 @@ export const dramaService = {
     // Try Primary Detail
     let data = await fetchFromApi('/detail', { bookId: id });
     
-    // If Primary fails, we might need a secondary detail logic
     if (!data) return undefined;
     
     const item = Array.isArray(data) ? data[0] : data;
@@ -183,11 +190,9 @@ export const dramaService = {
   search: async (query: string): Promise<Drama[]> => {
     if (!query) return [];
     
-    // Try Primary Search
     let data = await fetchFromApi('/search', { query: query });
     
     if (!data || !Array.isArray(data) || data.length === 0) {
-        // Try Secondary Search
         data = await fetchFromApi('api/search/dramabox', { action: 'search', query: query }, 'secondary');
     }
 
@@ -197,17 +202,57 @@ export const dramaService = {
   },
 
   getEpisodes: async (dramaId: string): Promise<Episode[]> => {
+    // 1. Try fetching explicit episode list
     const data = await fetchFromApi('/allepisode', { bookId: dramaId });
     
-    if (!data || !Array.isArray(data)) return [];
+    if (data && Array.isArray(data) && data.length > 0) {
+        return data
+        .map((item: any) => normalizeEpisode(item, dramaId))
+        .sort((a, b) => a.episodeNumber - b.episodeNumber);
+    }
+
+    // 2. If no episode list returned, but we know the ID exists (from getById or list),
+    // we generate a virtual list based on chapterCount from the Drama detail.
+    // NOTE: This requires fetching detail if we don't have it, but for now we assume 
+    // we handle this by fetching detail in the WatchPage and passing count, 
+    // OR we fetch detail here if needed.
+    // Let's re-fetch detail to be safe and get the count.
+    const detailData = await dramaService.getById(dramaId);
     
-    return data
-      .map((item: any) => normalizeEpisode(item, dramaId))
-      .sort((a, b) => a.episodeNumber - b.episodeNumber);
+    if (detailData && detailData.latestEpisode && detailData.latestEpisode > 0) {
+        const virtualEpisodes: Episode[] = [];
+        for (let i = 1; i <= detailData.latestEpisode; i++) {
+            virtualEpisodes.push({
+                id: `virt-${dramaId}-${i}`,
+                dramaId: dramaId,
+                episodeNumber: i,
+                title: `Episode ${i}`,
+                streamUrl: '', // Will be fetched on demand
+                thumbnail: detailData.thumbnail
+            });
+        }
+        return virtualEpisodes;
+    }
+
+    return [];
+  },
+
+  // NEW: Fetch specific stream URL from Secondary API
+  getStreamUrl: async (bookId: string, episode: number): Promise<string | null> => {
+      // Call: /api/search/dramabox?action=stream&book_id=...&episode=...
+      const data = await fetchFromApi('api/search/dramabox', {
+          action: 'stream',
+          book_id: bookId,
+          episode: episode.toString()
+      }, 'secondary');
+
+      if (data && data.url) {
+          return fixUrl(data.url) || null;
+      }
+      return null;
   },
 
   getRandom: async (): Promise<Drama[]> => {
-    // Fallback to trending if random endpoint fails
     const data = await fetchFromApi('/randomdrama');
     if (!data || !Array.isArray(data)) return dramaService.getTrending();
     return data.map(normalizeDrama);
