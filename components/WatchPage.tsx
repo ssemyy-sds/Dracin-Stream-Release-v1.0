@@ -1,11 +1,10 @@
-//Deplay ke 2 setelah update api.ts
 
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { dramaService } from '../services/api';
 import { Drama, Episode } from '../types';
 import { VideoPlayer } from './VideoPlayer';
-import { PlayCircle, Share2, Heart, Plus, AlertCircle } from 'lucide-react';
+import { PlayCircle, Share2, Heart, Plus, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from './ui/Button';
 
 export const WatchPage: React.FC = () => {
@@ -19,24 +18,37 @@ export const WatchPage: React.FC = () => {
   
   const [loading, setLoading] = useState(true);
   const [loadingStream, setLoadingStream] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
       if (!id) return;
       setLoading(true);
+      setError(null);
       
       try {
           const dramaData = await dramaService.getById(id);
-          const episodeData = await dramaService.getEpisodes(id);
           
+          if (!dramaData) {
+              setError("Drama not found or API error.");
+              setLoading(false);
+              return;
+          }
+
           setDrama(dramaData);
+
+          const episodeData = await dramaService.getEpisodes(id);
           setEpisodes(episodeData);
           
           if (episodeData.length > 0) {
             setCurrentEpisode(episodeData[0]);
+          } else {
+              // Should be handled by virtual episodes in service, but just in case
+              setError("No episodes available for this drama.");
           }
       } catch (e) {
-          console.error("Failed to load drama details");
+          console.error("Failed to load drama details", e);
+          setError("Failed to load content.");
       } finally {
           setLoading(false);
       }
@@ -59,10 +71,12 @@ export const WatchPage: React.FC = () => {
           setActiveStreamUrl(''); // Reset while loading
 
           try {
-              // Fetch from secondary API
+              // Fetch from service
               const url = await dramaService.getStreamUrl(drama.id, currentEpisode.episodeNumber);
               if (url) {
                   setActiveStreamUrl(url);
+              } else {
+                  console.warn("No stream URL found for", drama.id, currentEpisode.episodeNumber);
               }
           } catch (e) {
               console.error("Error fetching stream URL", e);
@@ -74,11 +88,24 @@ export const WatchPage: React.FC = () => {
       fetchStream();
   }, [currentEpisode, drama]);
 
-  if (loading || !drama) {
+  if (loading) {
     return (
         <div className="min-h-screen bg-black flex items-center justify-center">
           <div className="w-12 h-12 border-4 border-brand-orange border-t-transparent rounded-full animate-spin"></div>
         </div>
+      );
+  }
+
+  if (error || !drama) {
+      return (
+          <div className="min-h-screen bg-black flex flex-col items-center justify-center text-white gap-4">
+              <AlertCircle className="h-12 w-12 text-red-500" />
+              <h2 className="text-xl font-bold">Oops! Something went wrong.</h2>
+              <p className="text-gray-400">{error || "Could not load drama details."}</p>
+              <Button onClick={() => window.location.reload()} className="gap-2">
+                  <RefreshCw className="h-4 w-4" /> Retry
+              </Button>
+          </div>
       );
   }
 
@@ -90,7 +117,7 @@ export const WatchPage: React.FC = () => {
            {loadingStream ? (
                <div className="w-full h-full flex flex-col items-center justify-center bg-gray-900 text-white gap-3">
                    <div className="w-10 h-10 border-4 border-brand-orange border-t-transparent rounded-full animate-spin"></div>
-                   <p className="text-sm font-medium">Loading Stream...</p>
+                   <p className="text-sm font-medium">Loading Episode {currentEpisode?.episodeNumber}...</p>
                </div>
            ) : activeStreamUrl ? (
               <VideoPlayer 
@@ -98,9 +125,10 @@ export const WatchPage: React.FC = () => {
                 poster={drama.poster}
               />
            ) : (
-               <div className="w-full h-full bg-gray-900 flex flex-col items-center justify-center text-gray-500 gap-2">
+               <div className="w-full h-full bg-gray-900 flex flex-col items-center justify-center text-gray-500 gap-2 p-4 text-center">
                    <AlertCircle className="h-10 w-10 text-gray-600" />
-                   <p>Stream not available for this episode.</p>
+                   <p className="font-medium text-white">Stream not available</p>
+                   <p className="text-xs">Server might be busy or link expired. Try another episode.</p>
                </div>
            )}
         </div>
@@ -193,7 +221,7 @@ export const WatchPage: React.FC = () => {
                 ))}
                 {episodes.length === 0 && (
                      <div className="p-4 text-center text-gray-500 text-sm">
-                         No episodes found.
+                         No episodes available.
                      </div>
                 )}
             </div>
