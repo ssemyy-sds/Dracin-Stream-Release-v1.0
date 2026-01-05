@@ -123,13 +123,36 @@ const normalizeDrama = (item: any): Drama => {
 };
 
 const normalizeEpisode = (item: any, dramaId: string, index?: number): Episode => {
-  const epNum = parseInt(item.episode || index || 0);
+  // Parse episode number
+  const epNum = parseInt(item.episode || item.chapterIndex || index || 0);
+  
+  // 1. Check for Simple URL
+  let streamUrl = item.url || item.stream_url || '';
+
+  // 2. Check for Deeply Nested cdnList (Primary API Structure)
+  // Structure: cdnList[] -> videoPathList[] -> videoPath
+  if (!streamUrl && Array.isArray(item.cdnList) && item.cdnList.length > 0) {
+      // Try to find default CDN or take first
+      const cdn = item.cdnList.find((c: any) => c.isDefault === 1) || item.cdnList[0];
+      
+      if (cdn && Array.isArray(cdn.videoPathList) && cdn.videoPathList.length > 0) {
+          // Try to find 1080p or high quality
+          const bestQuality = cdn.videoPathList.find((v: any) => v.quality === 1080) 
+                           || cdn.videoPathList.find((v: any) => v.quality >= 720)
+                           || cdn.videoPathList[0];
+                           
+          if (bestQuality && bestQuality.videoPath) {
+              streamUrl = bestQuality.videoPath;
+          }
+      }
+  }
+
   return {
-    id: item.id?.toString() || `ep-${dramaId}-${epNum}`,
+    id: item.id?.toString() || item.chapterId?.toString() || `ep-${dramaId}-${epNum}`,
     dramaId: dramaId,
     episodeNumber: epNum,
-    title: item.title || `Episode ${epNum}`,
-    streamUrl: item.url || item.stream_url || '', 
+    title: item.title || item.chapterName || `Episode ${epNum}`,
+    streamUrl: fixUrl(streamUrl) || '', 
     thumbnail: item.thumbnail || item.cover
   };
 };
@@ -212,7 +235,6 @@ const getById = async (id: string): Promise<Drama | undefined> => {
   }
 
   // 3. Last Resort Fallback: Search by ID
-  // Sometimes ID is passed but detail fails, searching might return the item in a list
   if (!data) {
       const searchData = await fetchFromApi('search/dramabox', { action: 'search', query: id }, 'secondary');
       if (searchData && Array.isArray(searchData) && searchData.length > 0) {
@@ -246,6 +268,7 @@ const search = async (query: string): Promise<Drama[]> => {
 
 const getEpisodes = async (dramaId: string): Promise<Episode[]> => {
   // 1. Try fetching explicit episode list from primary
+  // This endpoint returns full structure with cdnList
   let data = await fetchFromApi('/allepisode', { bookId: dramaId });
   
   if (data && Array.isArray(data) && data.length > 0) {
@@ -265,7 +288,6 @@ const getEpisodes = async (dramaId: string): Promise<Episode[]> => {
   }
 
   // 3. Fallback: Generate virtual episodes based on chapterCount from details
-  // We call getById again (it likely has cached result or is fast enough)
   const detailData = await getById(dramaId);
   
   if (detailData && detailData.latestEpisode && detailData.latestEpisode > 0) {
@@ -287,7 +309,7 @@ const getEpisodes = async (dramaId: string): Promise<Episode[]> => {
 };
 
 const getStreamUrl = async (bookId: string, episode: number): Promise<string | null> => {
-    // 1. Try Secondary API (Gimita) - Most reliable for streams
+    // 1. Try Secondary API (Gimita) - Most reliable for separate streams
     let data = await fetchFromApi('search/dramabox', {
         action: 'stream',
         book_id: bookId,
@@ -299,7 +321,6 @@ const getStreamUrl = async (bookId: string, episode: number): Promise<string | n
     }
     
     // 2. Try Primary API fallback for stream (rare but possible)
-    // Some primary APIs support /play?bookId=...&episode=...
     data = await fetchFromApi('/play', { 
         bookId: bookId, 
         episode: episode.toString() 
