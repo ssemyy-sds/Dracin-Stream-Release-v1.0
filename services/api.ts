@@ -6,8 +6,25 @@ const BASE_URL = '/api';
 // Helper: Fix incomplete URLs
 const fixUrl = (url?: string) => {
     if (!url) return undefined;
+    
+    // Handle standard protocol-less URLs
     if (url.startsWith('//')) return `https:${url}`;
-    if (!url.startsWith('http')) return url; // Might be relative, leave it or handle specific cases
+    
+    // Handle specific relative paths often found in scraper APIs
+    if (url.startsWith('/uploads') || url.startsWith('/images')) {
+       // Assumption: Relative paths belong to the secondary provider if encountered there
+       // But usually, we just need a valid absolute URL. 
+       // If source is unknown, we can't easily fix relative / without a base.
+       // However, often these are just missing http
+       return url; 
+    }
+
+    if (!url.startsWith('http')) {
+        // Simple heuristic: if it looks like a domain, prepend https
+        if (url.includes('.') && !url.includes(' ')) return `https://${url}`;
+        return url;
+    }
+    
     return url.replace('http://', 'https://');
 };
 
@@ -30,13 +47,17 @@ const fetchFromApi = async (endpoint: string, params: Record<string, string> = {
       headers: { 'Accept': 'application/json' }
     });
 
-    if (!response.ok) return null;
+    // Silent Fail on 400/404 to trigger fallback mechanism gracefully
+    if (!response.ok) {
+        if (response.status !== 404 && response.status !== 400) {
+            console.warn(`API Error ${response.status} for ${endpoint} (${provider})`);
+        }
+        return null;
+    }
     
     const json = await response.json();
     
     // Validation: Handle various API response structures
-    // Some return { data: [...] }, some { result: [...] }, some directly [...]
-    // Secondary API might return { status: true, data: [...] }
     const result = json.data || json.result || json;
     
     if (!result) return null;
@@ -44,7 +65,7 @@ const fetchFromApi = async (endpoint: string, params: Record<string, string> = {
     
     return result;
   } catch (error) {
-    console.warn(`Fetch error for ${endpoint} (${provider}):`, error);
+    // Network errors usually mean we should try fallback
     return null;
   }
 };
@@ -57,11 +78,12 @@ const normalizeDrama = (item: any): Drama => {
   // Title Mapping
   const title = item.title || item.name || item.bookName || 'Unknown Title';
   
-  // Image Mapping (Aggressively check all possible fields)
-  // Primary usually uses: cover, poster
-  // Secondary usually uses: img, thumbnail
-  const rawThumb = item.cover || item.thumbnail || item.image || item.img || item.poster;
-  const rawPoster = item.poster || item.cover || item.thumbnail || item.img;
+  // Image Mapping (Aggressively check all possible fields including 'thumb' for Gimita API)
+  // Priority: cover -> poster -> thumb -> thumbnail -> image -> img -> url_img
+  const rawThumb = item.cover || item.poster || item.thumb || item.thumbnail || item.image || item.img || item.url_img;
+  
+  // For poster, we try to find a high-res version, but fallback to thumb if needed
+  const rawPoster = item.poster || item.cover || item.image || item.thumb || item.thumbnail || item.img;
   
   // Placeholders
   const PLACEHOLDER_THUMB = 'https://placehold.co/300x450/1e1e1e/FFF?text=No+Image';
@@ -101,7 +123,6 @@ export const dramaService = {
   // 2. If fail, Try Secondary "Home" Endpoint (since secondary serves mixed content)
   getWithFallback: async (primaryEndpoint: string): Promise<Drama[]> => {
       // 1. Try Primary
-      console.log(`Trying Primary: ${primaryEndpoint}`);
       let data = await fetchFromApi(primaryEndpoint);
       
       if (data && Array.isArray(data) && data.length > 0) {
@@ -110,7 +131,7 @@ export const dramaService = {
 
       // 2. Try Secondary (Gimita)
       // Path: /api/search/dramabox?action=home -> mapped via proxy
-      console.log(`Primary failed, Trying Secondary: api/search/dramabox?action=home`);
+      // Console log removed to reduce noise in production, assume fallback is active
       data = await fetchFromApi('api/search/dramabox', { action: 'home' }, 'secondary');
 
       if (data && Array.isArray(data) && data.length > 0) {
@@ -157,13 +178,6 @@ export const dramaService = {
     let data = await fetchFromApi('/detail', { bookId: id });
     
     // If Primary fails, we might need a secondary detail logic
-    // For now, if the ID came from Secondary API (which might look different),
-    // we might need to adjust. Assuming Secondary API "home" result objects are complete enough
-    // OR we fall back to searching specifically for it.
-    
-    // Note: The secondary API docs provided is just `search/dramabox?action=home`.
-    // It doesn't explicitly show a detail endpoint. We rely on Primary for details for now.
-    
     if (!data) return undefined;
     
     const item = Array.isArray(data) ? data[0] : data;
@@ -177,9 +191,7 @@ export const dramaService = {
     let data = await fetchFromApi('/search', { query: query });
     
     if (!data || !Array.isArray(data) || data.length === 0) {
-        // Try Secondary Search (guessing endpoint based on home action)
-        // Assuming ?action=search&q=... or standard search param
-        // Using provided base: api/search/dramabox
+        // Try Secondary Search
         data = await fetchFromApi('api/search/dramabox', { action: 'search', query: query }, 'secondary');
     }
 
