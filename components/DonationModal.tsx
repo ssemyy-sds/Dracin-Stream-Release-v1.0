@@ -43,12 +43,12 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
         {/* QR Code Container */}
         <div className="bg-white p-4 rounded-2xl mx-auto w-64 h-64 flex items-center justify-center mb-6 shadow-lg shadow-brand-orange/10">
             {/* 
-                PLACEHOLDER QR CODE 
-                Ganti 'src' dibawah ini dengan URL gambar QRIS anda nantinya.
+                Menggunakan file lokal qrcode_sds.png
+                Pastikan file ini ada di folder public/ project Anda
             */}
             <img 
-              src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https://dracin.stream&color=000000" 
-              alt="QRIS Code" 
+              src="/qrcode_sds.png" 
+              alt="QRIS Code SDS" 
               className="w-full h-full object-contain mix-blend-multiply"
             />
         </div>
