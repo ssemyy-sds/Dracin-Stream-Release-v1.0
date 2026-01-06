@@ -43,13 +43,18 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
         {/* QR Code Container */}
         <div className="bg-white p-4 rounded-2xl mx-auto w-64 h-64 flex items-center justify-center mb-6 shadow-lg shadow-brand-orange/10">
             {/* 
-                Menggunakan file lokal qrcode_sds.png
-                Pastikan file ini ada di folder public/ project Anda
+                PENTING: 
+                File 'qrcode_sds.png' HARUS berada di dalam folder 'public/' agar terbaca oleh browser setelah build.
+                Contoh struktur: /public/qrcode_sds.png
             */}
             <img 
-              src="/qrcode_sds.png" 
+              src="qrcode_sds.png" 
               alt="QRIS Code SDS" 
               className="w-full h-full object-contain mix-blend-multiply"
+              onError={(e) => {
+                // Fallback otomatis ke QR code default jika file lokal gagal dimuat
+                e.currentTarget.src = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https://dracin.stream&color=000000";
+              }}
             />
         </div>
 
