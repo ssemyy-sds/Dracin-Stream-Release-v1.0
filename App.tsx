@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
@@ -5,6 +6,7 @@ import { Home } from './components/Home';
 import { SearchPage } from './components/SearchPage';
 import { WatchPage } from './components/WatchPage';
 import { CategoryPage } from './components/CategoryPage';
+import { DetailPage } from './components/DetailPage';
 
 function App() {
   return (
@@ -17,6 +19,7 @@ function App() {
             <Route path="/search" element={<SearchPage />} />
             <Route path="/category/:type" element={<CategoryPage />} />
             <Route path="/watch/:id" element={<WatchPage />} />
+            <Route path="/detail/:id" element={<DetailPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

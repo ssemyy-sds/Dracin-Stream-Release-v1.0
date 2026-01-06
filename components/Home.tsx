@@ -136,10 +136,14 @@ export const Home: React.FC = () => {
                                 <Play className="h-5 w-5 fill-current group-hover:scale-110 transition-transform" />
                                 Watch Now
                             </Link>
-                            <button className="px-8 py-4 bg-white/10 backdrop-blur-sm text-white rounded-xl hover:bg-white/20 transition-all duration-300 font-semibold flex items-center gap-3 border border-white/10">
+                            
+                            <Link 
+                                to={`/detail/${featuredDrama.bookId}`}
+                                className="px-8 py-4 bg-white/10 backdrop-blur-sm text-white rounded-xl hover:bg-white/20 transition-all duration-300 font-semibold flex items-center gap-3 border border-white/10"
+                            >
                                 <Info className="h-5 w-5" />
                                 More Info
-                            </button>
+                            </Link>
                         </div>
                     </div>
 
