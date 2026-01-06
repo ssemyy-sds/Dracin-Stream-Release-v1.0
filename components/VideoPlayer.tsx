@@ -6,6 +6,7 @@ import { Play, Pause, Volume2, VolumeX, Maximize, Settings, Check } from 'lucide
 interface VideoPlayerProps {
   src: string;
   poster?: string;
+  onEnded?: () => void;
 }
 
 interface QualityLevel {
@@ -13,7 +14,7 @@ interface QualityLevel {
   level: number;
 }
 
-export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster }) => {
+export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -100,15 +101,22 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster }) => {
       }
     };
 
+    const handleEnded = () => {
+        setIsPlaying(false);
+        if (onEnded) onEnded();
+    };
+
     video.addEventListener('timeupdate', updateProgress);
     video.addEventListener('play', () => setIsPlaying(true));
     video.addEventListener('pause', () => setIsPlaying(false));
+    video.addEventListener('ended', handleEnded);
 
     return () => {
       if (hlsRef.current) {
         hlsRef.current.destroy();
       }
       video.removeEventListener('timeupdate', updateProgress);
+      video.removeEventListener('ended', handleEnded);
     };
   }, [src]);
 
@@ -241,7 +249,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster }) => {
   return (
     <div 
       ref={containerRef}
-      className="relative w-full aspect-video bg-black group overflow-hidden"
+      className="relative w-full h-full bg-black group overflow-hidden"
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >

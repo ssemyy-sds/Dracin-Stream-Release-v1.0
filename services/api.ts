@@ -170,6 +170,15 @@ const getList = async (endpoint: string, params: any = {}): Promise<Drama[]> => 
     return list.map(normalizeDrama);
 };
 
+// Specific endpoints as requested
+const getPopularDramas = async (): Promise<Drama[]> => {
+    return getList('populersearch');
+};
+
+const getLatestDramas = async (): Promise<Drama[]> => {
+    return getList('latest');
+};
+
 // Updated Category Handlers
 const getForYou = () => getList('foryou');
 const getLatest = () => getList('latest');
@@ -188,12 +197,13 @@ export const dramaService = {
     getEpisodes,
     getStreamUrl,
     getTrending,
+    getPopularDramas, // Exported
+    getLatestDramas,  // Exported
     search: (q: string) => getList('search', { query: q }),
     getForYou,
     getLatest,
     getVip,
     getDubIndo,
-    // Updated getByCategory to pass params down
     getByCategory: (cat: string, page: number = 1, classify: string = 'terpopuler') => {
         switch (cat.toLowerCase()) {
             case 'foryou': return getForYou();

@@ -7,25 +7,37 @@ import { DramaCard } from './DramaCard';
 import { Play, Info, Star, Calendar } from 'lucide-react';
 
 export const Home: React.FC = () => {
-  const [dramas, setDramas] = useState<Drama[]>([]);
+  const [trending, setTrending] = useState<Drama[]>([]);
+  const [popular, setPopular] = useState<Drama[]>([]);
+  const [recent, setRecent] = useState<Drama[]>([]);
+  
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function loadDramas() {
+    async function loadData() {
       try {
         setLoading(true);
-        const data = await dramaService.getTrending();
-        setDramas(data);
+        // Fetch all data in parallel
+        const [trendingData, popularData, recentData] = await Promise.all([
+            dramaService.getTrending(),
+            dramaService.getPopularDramas(),
+            dramaService.getLatestDramas()
+        ]);
+
+        setTrending(trendingData);
+        setPopular(popularData);
+        setRecent(recentData);
+
       } catch (err: any) {
-        console.error('[Home] Error loading dramas:', err);
-        setError(err.message || 'Failed to load dramas');
+        console.error('[Home] Error loading content:', err);
+        setError(err.message || 'Failed to load content');
       } finally {
         setLoading(false);
       }
     }
 
-    loadDramas();
+    loadData();
   }, []);
 
   if (loading) {
@@ -55,32 +67,26 @@ export const Home: React.FC = () => {
     );
   }
 
-  const featuredDrama = dramas[0];
+  const featuredDrama = trending[0];
 
   return (
     <div className="min-h-screen bg-brand-black">
       
       {/* 
         Redesigned Hero Section: Cinematic Split Layout 
-        Solves the "text covering face" issue by separating text and image on desktop,
-        and using a blurred atmospheric background.
       */}
       {featuredDrama && (
         <div className="relative w-full min-h-[650px] md:h-[90vh] flex items-center overflow-hidden mb-12">
             
             {/* 1. Atmospheric Background Layer */}
             <div className="absolute inset-0 z-0">
-                {/* Huge Blurred Image */}
                 <img 
                     src={featuredDrama.cover} 
                     alt="Background" 
                     className="w-full h-full object-cover blur-3xl opacity-40 scale-110"
                 />
-                {/* Gradient Overlays for Readability */}
                 <div className="absolute inset-0 bg-gradient-to-t from-brand-black via-brand-black/80 to-transparent" />
                 <div className="absolute inset-0 bg-gradient-to-r from-brand-black via-brand-black/60 to-transparent" />
-                
-                {/* Decorative Grid Pattern */}
                 <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div>
             </div>
 
@@ -90,7 +96,6 @@ export const Home: React.FC = () => {
                     
                     {/* Left: Text Content */}
                     <div className="flex flex-col items-center md:items-start text-center md:text-left space-y-6">
-                        {/* Badges */}
                         <div className="flex flex-wrap justify-center md:justify-start gap-3">
                             <span className="px-3 py-1 bg-brand-orange text-white text-xs font-bold rounded-full uppercase tracking-wider shadow-lg shadow-brand-orange/20">
                                 #1 Trending
@@ -100,12 +105,10 @@ export const Home: React.FC = () => {
                             </span>
                         </div>
 
-                        {/* Title - Huge & Clean */}
                         <h1 className="text-4xl md:text-6xl lg:text-7xl font-extrabold text-white leading-tight drop-shadow-2xl">
                             {featuredDrama.bookName}
                         </h1>
 
-                        {/* Meta Info */}
                         <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 md:gap-6 text-sm md:text-base text-gray-300 font-medium">
                             <div className="flex items-center gap-1 text-yellow-400">
                                 <Star className="h-4 w-4 fill-current" />
@@ -121,12 +124,10 @@ export const Home: React.FC = () => {
                             <span className="text-brand-orange">{featuredDrama.genres[0]}</span>
                         </div>
 
-                        {/* Description */}
                         <p className="text-gray-300 text-base md:text-lg leading-relaxed max-w-2xl line-clamp-3 md:line-clamp-4">
                             {featuredDrama.introduction}
                         </p>
 
-                        {/* Buttons */}
                         <div className="flex gap-4 pt-4">
                             <Link
                                 to={`/watch/${featuredDrama.bookId}`}
@@ -145,9 +146,7 @@ export const Home: React.FC = () => {
                     {/* Right: Floating Poster (Desktop Only) */}
                     <div className="hidden md:block relative group perspective-1000">
                         <div className="relative w-[350px] lg:w-[400px] aspect-[2/3] mx-auto transform rotate-3 group-hover:rotate-0 transition-all duration-700 ease-out">
-                            {/* Glowing effect behind poster */}
                             <div className="absolute inset-0 bg-brand-orange rounded-2xl blur-3xl opacity-20 group-hover:opacity-40 transition-opacity duration-700"></div>
-                            
                             <img
                                 src={featuredDrama.cover}
                                 alt={featuredDrama.bookName}
@@ -156,8 +155,6 @@ export const Home: React.FC = () => {
                                     e.currentTarget.src = 'https://placehold.co/600x900/1e1e1e/FFF?text=No+Cover';
                                 }}
                             />
-                            
-                            {/* Shine effect */}
                             <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
                         </div>
                     </div>
@@ -169,55 +166,64 @@ export const Home: React.FC = () => {
 
       <div className="container mx-auto px-4 pb-20">
         {/* Trending Section */}
-        <section className="mb-16">
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
-               <div className="w-1.5 h-8 bg-brand-orange rounded-full"></div>
-               Trending Now
-            </h2>
-            <Link to="/category/trending" className="text-brand-orange text-sm font-semibold hover:text-white transition-colors">
-                View All
-            </Link>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
-            {dramas.slice(0, 12).map((drama) => (
-              <DramaCard key={drama.bookId} drama={drama} />
-            ))}
-          </div>
-        </section>
+        {trending.length > 0 && (
+            <section className="mb-16">
+            <div className="flex items-center justify-between mb-8">
+                <h2 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
+                <div className="w-1.5 h-8 bg-brand-orange rounded-full"></div>
+                Trending Now
+                </h2>
+                <Link to="/category/trending" className="text-brand-orange text-sm font-semibold hover:text-white transition-colors">
+                    View All
+                </Link>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
+                {trending.slice(0, 12).map((drama) => (
+                <DramaCard key={drama.bookId} drama={drama} />
+                ))}
+            </div>
+            </section>
+        )}
 
         {/* Popular Section */}
-        <section className="mb-16">
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
-               <div className="w-1.5 h-8 bg-blue-500 rounded-full"></div>
-               Popular Dramas
-            </h2>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
-            {dramas.slice(12, 24).map((drama) => (
-               <DramaCard key={drama.bookId} drama={drama} />
-            ))}
-          </div>
-        </section>
+        {popular.length > 0 && (
+            <section className="mb-16">
+            <div className="flex items-center justify-between mb-8">
+                <h2 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
+                <div className="w-1.5 h-8 bg-blue-500 rounded-full"></div>
+                Popular Dramas
+                </h2>
+                <Link to="/category/trending" className="text-brand-orange text-sm font-semibold hover:text-white transition-colors">
+                    View All
+                </Link>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
+                {popular.slice(0, 12).map((drama) => (
+                <DramaCard key={drama.bookId} drama={drama} />
+                ))}
+            </div>
+            </section>
+        )}
 
         {/* Recently Added */}
-        <section>
-          <div className="flex items-center justify-between mb-8">
-            <h2 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
-               <div className="w-1.5 h-8 bg-purple-500 rounded-full"></div>
-               Recently Added
-            </h2>
-            <Link to="/category/latest" className="text-brand-orange text-sm font-semibold hover:text-white transition-colors">
-                View All
-            </Link>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
-            {dramas.slice(24, 36).map((drama) => (
-               <DramaCard key={drama.bookId} drama={drama} />
-            ))}
-          </div>
-        </section>
+        {recent.length > 0 && (
+            <section>
+            <div className="flex items-center justify-between mb-8">
+                <h2 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
+                <div className="w-1.5 h-8 bg-purple-500 rounded-full"></div>
+                Recently Added
+                </h2>
+                <Link to="/category/latest" className="text-brand-orange text-sm font-semibold hover:text-white transition-colors">
+                    View All
+                </Link>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
+                {recent.slice(0, 12).map((drama) => (
+                <DramaCard key={drama.bookId} drama={drama} />
+                ))}
+            </div>
+            </section>
+        )}
       </div>
     </div>
   );
