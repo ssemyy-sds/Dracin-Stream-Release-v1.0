@@ -1,12 +1,23 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import { Play, Pause, Volume2, VolumeX, Maximize, Settings, Check } from 'lucide-react';
+import { 
+  Play, Pause, Volume2, VolumeX, Maximize, Settings, 
+  Check, SkipBack, SkipForward, List, ChevronLeft 
+} from 'lucide-react';
 
 interface VideoPlayerProps {
   src: string;
   poster?: string;
   onEnded?: () => void;
+  // New props for integrated navigation
+  onNext?: () => void;
+  onPrev?: () => void;
+  hasNext?: boolean;
+  hasPrev?: boolean;
+  episodeCurrent?: number;
+  episodeTotal?: number;
+  title?: string;
 }
 
 interface QualityLevel {
@@ -14,7 +25,18 @@ interface QualityLevel {
   level: number;
 }
 
-export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }) => {
+export const VideoPlayer: React.FC<VideoPlayerProps> = ({ 
+  src, 
+  poster, 
+  onEnded,
+  onNext,
+  onPrev,
+  hasNext,
+  hasPrev,
+  episodeCurrent,
+  episodeTotal,
+  title
+}) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -24,6 +46,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
   const [isMuted, setIsMuted] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
   const [showControls, setShowControls] = useState(true);
   
   // Speed Control State
@@ -37,29 +60,18 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
   const [isHlsSupported, setIsHlsSupported] = useState(false);
   
   const controlsTimeoutRef = useRef<number | null>(null);
-  const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  const speeds = [0.75, 1, 1.25, 1.5, 2];
 
   // --- Main Effect: Load Source & HLS Management ---
   useEffect(() => {
-    console.log('[VideoPlayer] useEffect triggered');
-    console.log('[VideoPlayer] src:', src);
-    console.log('[VideoPlayer] videoRef.current:', videoRef.current);
-
     const video = videoRef.current;
-    if (!video || !src) {
-        console.log('[VideoPlayer] Missing src or videoRef, skipping');
-        return;
-    }
+    if (!video || !src) return;
 
-    // 1. Cleanup Previous HLS Instance
     if (hlsRef.current) {
-      console.log('[VideoPlayer] Destroying old HLS instance');
       hlsRef.current.destroy();
       hlsRef.current = null;
     }
 
-    // 2. Reset Video Element State (Critical for manual next)
-    console.log('[VideoPlayer] Resetting video element');
     video.pause();
     video.removeAttribute('src'); 
     video.load();
@@ -69,13 +81,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
     setIsHlsSupported(false);
     setCurrentQuality(-1);
 
-    // 3. Initialize Player based on Format
     const isHlsSource = src.includes('.m3u8');
 
     if (isHlsSource && Hls.isSupported()) {
-      console.log('[VideoPlayer] HLS is supported, creating new instance');
       setIsHlsSupported(true);
-      
       const hls = new Hls({
         capLevelToPlayerSize: true, 
         autoStartLoad: true,
@@ -87,51 +96,22 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
       hls.attachMedia(video);
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        console.log('[VideoPlayer] Manifest parsed, ready to play');
         const levels = hls.levels.map((level, index) => ({
           height: level.height,
           level: index
         })).sort((a, b) => b.height - a.height); 
-
         setQualities(levels);
-
-        // Attempt Auto-Play after load
-        video.play().catch(err => {
-            console.warn('[VideoPlayer] Auto-play blocked or failed:', err);
-            setIsPlaying(false);
-        });
+        video.play().catch(() => setIsPlaying(false));
       });
-
-      hls.on(Hls.Events.ERROR, (event, data) => {
-          if (data.fatal) {
-            console.error('[VideoPlayer] HLS Fatal Error:', data);
-          }
-      });
-
     } else if (video.canPlayType('application/vnd.apple.mpegurl') || !isHlsSource) {
-      // Native HLS (Safari) or standard MP4
-      console.log('[VideoPlayer] Using Native Playback');
       video.src = src;
-      
-      // Check native HLS support for quality UI toggle (usually not available natively)
-      if (isHlsSource) {
-         setIsHlsSupported(false); 
-      }
-
       video.load();
-      // Attempt Auto-Play
-      video.play().catch(err => {
-          console.warn('[VideoPlayer] Auto-play blocked or failed:', err);
-          setIsPlaying(false);
-      });
+      video.play().catch(() => setIsPlaying(false));
     }
 
-    // Restore user preference for playback rate
     video.playbackRate = playbackRate;
 
-    // Cleanup on unmount or src change
     return () => {
-      console.log('[VideoPlayer] Cleanup useEffect');
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -142,22 +122,22 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
   // --- Event Handlers ---
 
   const handleVideoEnded = () => {
-      console.log('[VideoPlayer] Video ended event fired');
       setIsPlaying(false);
-      if (onEnded) {
-          console.log('[VideoPlayer] Calling onEnded callback');
-          onEnded();
-      }
+      if (onEnded) onEnded();
   };
 
   const updateProgress = () => {
     if (videoRef.current) {
-      setProgress((videoRef.current.currentTime / videoRef.current.duration) * 100);
-      setDuration(videoRef.current.duration);
+      const current = videoRef.current.currentTime;
+      const dur = videoRef.current.duration;
+      setCurrentTime(current);
+      setProgress((current / dur) * 100);
+      setDuration(dur);
     }
   };
 
-  const handlePlayPause = () => {
+  const handlePlayPause = (e?: React.MouseEvent) => {
+      e?.stopPropagation();
       const video = videoRef.current;
       if (video) {
           if (video.paused || video.ended) {
@@ -182,8 +162,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
       video.addEventListener('play', onPlay);
       video.addEventListener('pause', onPause);
       
-      // NOTE: 'ended' is handled via JSX prop to ensure no duplicate listeners
-      
       return () => {
           video.removeEventListener('timeupdate', updateProgress);
           video.removeEventListener('play', onPlay);
@@ -191,7 +169,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
       };
   }, []);
 
-  // Apply playback rate when state changes
   useEffect(() => {
     if (videoRef.current) {
       videoRef.current.playbackRate = playbackRate;
@@ -200,23 +177,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
 
   // --- UI Helpers ---
 
-  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newVolume = parseFloat(e.target.value);
-    setVolume(newVolume);
+  const handleVolumeChange = (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (videoRef.current) {
-      videoRef.current.volume = newVolume;
-      setIsMuted(newVolume === 0);
-    }
-  };
-
-  const toggleMute = () => {
-    if (videoRef.current) {
-      const newMuteState = !isMuted;
-      setIsMuted(newMuteState);
-      videoRef.current.muted = newMuteState;
-      if (!newMuteState) {
-          videoRef.current.volume = volume || 1;
-      }
+        const newMuteState = !isMuted;
+        setIsMuted(newMuteState);
+        videoRef.current.muted = newMuteState;
+        videoRef.current.volume = newMuteState ? 0 : 1;
     }
   };
 
@@ -224,15 +191,14 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
     const seekTime = (parseFloat(e.target.value) / 100) * duration;
     if (videoRef.current) {
       videoRef.current.currentTime = seekTime;
+      setProgress(parseFloat(e.target.value));
     }
   };
 
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement && containerRef.current) {
-      containerRef.current.requestFullscreen();
-    } else if (document.exitFullscreen) {
-      document.exitFullscreen();
-    }
+  const toggleSpeedMenu = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowSpeedMenu(!showSpeedMenu);
+    setShowQualityMenu(false);
   };
 
   const handleSpeedChange = (speed: number) => {
@@ -240,208 +206,161 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
     setShowSpeedMenu(false);
   };
 
-  const toggleSpeedMenu = () => {
-    const newState = !showSpeedMenu;
-    setShowSpeedMenu(newState);
-    if (newState) {
-      setShowQualityMenu(false); 
-      resetControlsTimeout();
-    }
-  };
-
-  const handleQualityChange = (level: number) => {
-    if (hlsRef.current) {
-      hlsRef.current.currentLevel = level;
-      setCurrentQuality(level);
-      setShowQualityMenu(false);
-    }
-  };
-
-  const toggleQualityMenu = () => {
-    const newState = !showQualityMenu;
-    setShowQualityMenu(newState);
-    if (newState) {
-      setShowSpeedMenu(false); 
-      resetControlsTimeout();
-    }
-  };
-
-  const resetControlsTimeout = () => {
-    if (controlsTimeoutRef.current) {
-      window.clearTimeout(controlsTimeoutRef.current);
-    }
-    setShowControls(true);
-  };
-
   const handleMouseMove = () => {
     setShowControls(true);
     if (controlsTimeoutRef.current) {
       window.clearTimeout(controlsTimeoutRef.current);
     }
-    
     if (showSpeedMenu || showQualityMenu) return;
 
     controlsTimeoutRef.current = window.setTimeout(() => {
       if (videoRef.current && !videoRef.current.paused) {
           setShowControls(false);
       }
-    }, 2500);
-  };
-
-  const handleMouseLeave = () => {
-    if (showSpeedMenu || showQualityMenu) return;
-    if (isPlaying) setShowControls(false);
+    }, 3000);
   };
 
   const formatTime = (time: number) => {
-    if (isNaN(time)) return "00:00";
+    if (isNaN(time)) return "0:00";
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
     return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
   };
 
-  const getCurrentQualityLabel = () => {
-    if (currentQuality === -1) return "Auto";
-    const quality = qualities.find(q => q.level === currentQuality);
-    return quality ? `${quality.height}p` : "Auto";
-  };
-
   return (
     <div 
       ref={containerRef}
-      className="relative w-full h-full bg-black group overflow-hidden"
+      className="relative w-full h-full bg-black group overflow-hidden select-none"
       onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
+      onClick={handleMouseMove}
+      onMouseLeave={() => isPlaying && setShowControls(false)}
     >
+      {/* Video Element: Object Cover for Full Vertical Immersion */}
       <video
         ref={videoRef}
         poster={poster}
         onEnded={handleVideoEnded}
         onClick={handlePlayPause}
-        className="w-full h-full object-contain"
+        className="w-full h-full object-cover"
         playsInline
       />
       
-      {/* Controls Overlay */}
-      <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-        {/* Progress Bar */}
-        <div className="relative h-1 bg-gray-600 rounded-full cursor-pointer group/progress mb-4">
-          <div 
-            className="absolute top-0 left-0 h-full bg-brand-orange rounded-full z-10"
-            style={{ width: `${progress}%` }}
-          />
-          <input 
-            type="range" 
-            min="0" 
-            max="100" 
-            value={progress || 0} 
-            onChange={handleSeek}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
-          />
-        </div>
+      {/* Top Gradient Overlay (for Title visibility) */}
+      <div className={`absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-black/80 to-transparent pointer-events-none transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}></div>
 
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button onClick={handlePlayPause} className="text-white hover:text-brand-orange transition-colors">
-              {isPlaying ? <Pause className="h-6 w-6 fill-current" /> : <Play className="h-6 w-6 fill-current" />}
-            </button>
-            
-            <div className="flex items-center gap-2 group/volume">
-              <button onClick={toggleMute} className="text-white hover:text-gray-300">
-                {isMuted || volume === 0 ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
-              </button>
-              <input 
-                type="range" 
-                min="0" 
-                max="1" 
-                step="0.1" 
-                value={isMuted ? 0 : volume} 
-                onChange={handleVolumeChange}
-                className="w-0 overflow-hidden group-hover/volume:w-20 transition-all duration-300 h-1 bg-white/30 rounded-lg appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full"
-              />
-            </div>
-
-            <div className="text-white text-xs font-mono">
-              {formatTime(videoRef.current?.currentTime || 0)} / {formatTime(duration)}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            {/* Quality Control (Only if HLS is supported) */}
-            {isHlsSupported && qualities.length > 0 && (
-              <div className="relative">
-                {showQualityMenu && (
-                  <div className="absolute bottom-full right-0 mb-4 bg-black/90 border border-white/20 rounded-lg overflow-hidden flex flex-col shadow-xl z-50 min-w-[100px]">
-                    <button
-                      onClick={() => handleQualityChange(-1)}
-                      className={`px-4 py-2 text-sm text-left hover:bg-white/10 transition-colors flex justify-between items-center ${currentQuality === -1 ? 'text-brand-orange font-bold' : 'text-white'}`}
-                    >
-                      Auto {currentQuality === -1 && <Check className="h-3 w-3" />}
-                    </button>
-                    {qualities.map((q) => (
-                      <button
-                        key={q.level}
-                        onClick={() => handleQualityChange(q.level)}
-                        className={`px-4 py-2 text-sm text-left hover:bg-white/10 transition-colors flex justify-between items-center ${currentQuality === q.level ? 'text-brand-orange font-bold' : 'text-white'}`}
-                      >
-                        {q.height}p {currentQuality === q.level && <Check className="h-3 w-3" />}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <button 
-                  onClick={toggleQualityMenu} 
-                  className="text-white hover:text-brand-orange transition-colors flex items-center gap-1"
-                  title="Quality"
-                >
-                  <Settings className="h-5 w-5" />
-                  <span className="text-xs font-bold w-8 text-center">{getCurrentQualityLabel()}</span>
-                </button>
-              </div>
-            )}
-
-            {/* Speed Control */}
-            <div className="relative">
-              {showSpeedMenu && (
-                <div className="absolute bottom-full right-0 mb-4 bg-black/90 border border-white/20 rounded-lg overflow-hidden flex flex-col shadow-xl z-50 min-w-[80px]">
-                  {speeds.map((speed) => (
-                    <button
-                      key={speed}
-                      onClick={() => handleSpeedChange(speed)}
-                      className={`px-4 py-2 text-sm text-left hover:bg-white/10 transition-colors ${playbackRate === speed ? 'text-brand-orange font-bold' : 'text-white'}`}
-                    >
-                      {speed}x
-                    </button>
-                  ))}
-                </div>
-              )}
-              <button 
-                onClick={toggleSpeedMenu} 
-                className="text-white hover:text-brand-orange transition-colors text-sm font-bold w-8"
-                title="Playback Speed"
-              >
-                {playbackRate}x
-              </button>
-            </div>
-
-            <button onClick={toggleFullscreen} className="text-white hover:text-brand-orange transition-colors">
-              <Maximize className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Center Play Button Overlay */}
+      {/* Center Play Button (Only visible when paused) */}
       {!isPlaying && (
         <div 
-          className="absolute inset-0 flex items-center justify-center bg-black/30 cursor-pointer"
+          className="absolute inset-0 flex items-center justify-center bg-black/20 cursor-pointer z-10"
           onClick={handlePlayPause}
         >
-          <div className="bg-brand-orange/90 rounded-full p-6 shadow-lg shadow-brand-orange/20 transform hover:scale-110 transition-transform">
-            <Play className="h-8 w-8 text-white fill-current ml-1" />
+          <div className="bg-black/40 backdrop-blur-sm rounded-full p-6 border border-white/10 animate-in zoom-in duration-200">
+            <Play className="h-10 w-10 text-white fill-current ml-1" />
           </div>
         </div>
       )}
+
+      {/* Bottom Controls Overlay */}
+      <div className={`absolute bottom-0 left-0 right-0 z-20 transition-all duration-300 ${showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+        
+        {/* Background Gradient */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-transparent -z-10 h-[180px] bottom-0 top-auto"></div>
+
+        <div className="px-4 pb-6 pt-10 flex flex-col gap-2">
+            
+            {/* Title & Info */}
+            <div className="mb-2 pl-1">
+                <h2 className="text-white font-semibold text-lg drop-shadow-md line-clamp-1">{title || 'Loading...'}</h2>
+            </div>
+
+            {/* Time & Progress Bar */}
+            <div className="flex items-center justify-between text-xs text-gray-300 font-medium px-1 mb-1">
+                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(duration)}</span>
+            </div>
+
+            <div className="relative h-1 bg-white/20 rounded-full cursor-pointer group/progress touch-none">
+              <div 
+                className="absolute top-0 left-0 h-full bg-brand-orange rounded-full z-10"
+                style={{ width: `${progress}%` }}
+              />
+              <input 
+                type="range" 
+                min="0" 
+                max="100" 
+                step="0.1"
+                value={progress || 0} 
+                onChange={handleSeek}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+              />
+            </div>
+
+            {/* Main Controls Row */}
+            <div className="flex items-center justify-between mt-3">
+                
+                {/* Left: Play/Pause & List */}
+                <div className="flex items-center gap-4">
+                    <button onClick={handlePlayPause} className="text-white hover:text-brand-orange transition-colors">
+                        {isPlaying ? <Pause className="h-6 w-6 fill-current" /> : <Play className="h-6 w-6 fill-current" />}
+                    </button>
+                    <button className="text-white/80 hover:text-white">
+                        <List className="h-6 w-6" />
+                    </button>
+                </div>
+
+                {/* Center: Navigation */}
+                <div className="flex items-center gap-4">
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); onPrev?.(); }}
+                        disabled={!hasPrev}
+                        className="text-white/80 hover:text-brand-orange disabled:opacity-30 transition-colors"
+                    >
+                        <SkipBack className="h-6 w-6 fill-current" />
+                    </button>
+                    
+                    <div className="text-white text-sm font-semibold whitespace-nowrap">
+                        Ep {episodeCurrent} <span className="text-white/50">/ {episodeTotal}</span>
+                    </div>
+
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); onNext?.(); }}
+                        disabled={!hasNext}
+                        className="text-white/80 hover:text-brand-orange disabled:opacity-30 transition-colors"
+                    >
+                        <SkipForward className="h-6 w-6 fill-current" />
+                    </button>
+                </div>
+
+                {/* Right: Settings/Mute */}
+                <div className="flex items-center gap-4">
+                    
+                    {/* Speed Menu */}
+                    <div className="relative">
+                        {showSpeedMenu && (
+                            <div className="absolute bottom-full right-[-10px] mb-3 bg-black/90 border border-white/10 rounded-lg overflow-hidden flex flex-col shadow-xl min-w-[60px]">
+                                {speeds.map((s) => (
+                                    <button
+                                        key={s}
+                                        onClick={(e) => { e.stopPropagation(); handleSpeedChange(s); }}
+                                        className={`px-3 py-2 text-xs text-center hover:bg-white/10 ${playbackRate === s ? 'text-brand-orange' : 'text-white'}`}
+                                    >
+                                        {s}x
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        <button onClick={toggleSpeedMenu} className="text-white/80 hover:text-white">
+                            <Settings className="h-5 w-5" />
+                        </button>
+                    </div>
+
+                    <button onClick={handleVolumeChange} className="text-white/80 hover:text-white">
+                        {isMuted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+                    </button>
+                </div>
+            </div>
+        </div>
+      </div>
     </div>
   );
 };
