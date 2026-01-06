@@ -4,7 +4,8 @@ import { Link } from 'react-router-dom';
 import { dramaService } from '../services/api';
 import { Drama } from '../types';
 import { DramaCard } from './DramaCard';
-import { Play, Info, Star, Calendar } from 'lucide-react';
+import { Play, Info, Star, Calendar, Coffee } from 'lucide-react';
+import { DonationModal } from './DonationModal';
 
 export const Home: React.FC = () => {
   const [trending, setTrending] = useState<Drama[]>([]);
@@ -13,6 +14,9 @@ export const Home: React.FC = () => {
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Donation Modal State
+  const [showDonation, setShowDonation] = useState(false);
 
   useEffect(() => {
     async function loadData() {
@@ -70,7 +74,7 @@ export const Home: React.FC = () => {
   const featuredDrama = trending[0];
 
   return (
-    <div className="min-h-screen bg-brand-black">
+    <div className="min-h-screen bg-brand-black relative">
       
       {/* 
         Redesigned Hero Section: Cinematic Split Layout 
@@ -229,6 +233,24 @@ export const Home: React.FC = () => {
             </section>
         )}
       </div>
+
+      {/* FLOATING DONATION BUTTON */}
+      <div 
+        className="fixed bottom-6 right-6 z-40 flex flex-col items-center gap-2 cursor-pointer group animate-in slide-in-from-bottom-5 duration-700"
+        onClick={() => setShowDonation(true)}
+      >
+        <div className="bg-brand-orange p-3 md:p-4 rounded-full shadow-[0_0_20px_rgba(255,102,0,0.5)] group-hover:scale-110 transition-transform duration-300 relative overflow-hidden">
+            <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-20 transition-opacity"></div>
+            <Coffee className="h-6 w-6 text-white fill-white/20" />
+        </div>
+        <div className="bg-black/80 backdrop-blur-sm px-3 py-1 rounded-full border border-white/10 shadow-lg">
+             <span className="text-[10px] md:text-xs font-bold text-white whitespace-nowrap">Traktir Kopi</span>
+        </div>
+      </div>
+
+      {/* DONATION MODAL */}
+      <DonationModal isOpen={showDonation} onClose={() => setShowDonation(false)} />
+
     </div>
   );
 };
