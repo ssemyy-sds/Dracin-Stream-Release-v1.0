@@ -54,6 +54,15 @@ export const WatchPage: React.FC = () => {
     fetchData();
   }, [id]);
 
+  // Monitor Episode Changes
+  useEffect(() => {
+    if (currentEpisode) {
+        console.log('[WatchPage] Episode changed');
+        console.log('[WatchPage] currentEpisodeId:', currentEpisode.chapterId);
+        console.log('[WatchPage] videoUrl:', currentEpisode.videoUrl);
+    }
+  }, [currentEpisode]);
+
   // Find Current Index
   const currentIndex = episodes.findIndex(ep => ep.chapterId === currentEpisode?.chapterId);
   const hasNext = currentIndex !== -1 && currentIndex < episodes.length - 1;
@@ -61,9 +70,16 @@ export const WatchPage: React.FC = () => {
 
   // Handlers
   const handleNext = () => {
+    console.log('[WatchPage] handleNextEpisode called');
+    console.log('[WatchPage] Current episode index:', currentIndex);
+    
     if (hasNext) {
-        setCurrentEpisode(episodes[currentIndex + 1]);
+        const nextEp = episodes[currentIndex + 1];
+        console.log('[WatchPage] Next episode:', nextEp);
+        setCurrentEpisode(nextEp);
         window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+        console.log('[WatchPage] No more episodes');
     }
   };
 
@@ -75,6 +91,7 @@ export const WatchPage: React.FC = () => {
   };
 
   const handleVideoEnded = () => {
+    console.log('[WatchPage] handleVideoEnded called. AutoPlay:', autoPlay, 'HasNext:', hasNext);
     if (autoPlay && hasNext) {
         console.log("Auto-playing next episode...");
         handleNext();

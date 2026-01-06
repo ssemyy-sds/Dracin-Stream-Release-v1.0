@@ -39,26 +39,43 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
   const controlsTimeoutRef = useRef<number | null>(null);
   const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
+  // --- Main Effect: Load Source & HLS Management ---
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !src) return;
+    console.log('[VideoPlayer] useEffect triggered');
+    console.log('[VideoPlayer] src:', src);
+    console.log('[VideoPlayer] videoRef.current:', videoRef.current);
 
-    // cleanup previous hls
+    const video = videoRef.current;
+    if (!video || !src) {
+        console.log('[VideoPlayer] Missing src or videoRef, skipping');
+        return;
+    }
+
+    // 1. Cleanup Previous HLS Instance
     if (hlsRef.current) {
+      console.log('[VideoPlayer] Destroying old HLS instance');
       hlsRef.current.destroy();
       hlsRef.current = null;
     }
 
-    // Determine Source Type
-    const isHlsSource = src.includes('.m3u8');
-    
-    // Reset States
+    // 2. Reset Video Element State (Critical for manual next)
+    console.log('[VideoPlayer] Resetting video element');
+    video.pause();
+    video.removeAttribute('src'); 
+    video.load();
+    setIsPlaying(false);
+    setProgress(0);
     setQualities([]);
     setIsHlsSupported(false);
     setCurrentQuality(-1);
 
+    // 3. Initialize Player based on Format
+    const isHlsSource = src.includes('.m3u8');
+
     if (isHlsSource && Hls.isSupported()) {
+      console.log('[VideoPlayer] HLS is supported, creating new instance');
       setIsHlsSupported(true);
+      
       const hls = new Hls({
         capLevelToPlayerSize: true, 
         autoStartLoad: true,
@@ -70,55 +87,109 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
       hls.attachMedia(video);
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        console.log('[VideoPlayer] Manifest parsed, ready to play');
         const levels = hls.levels.map((level, index) => ({
           height: level.height,
           level: index
         })).sort((a, b) => b.height - a.height); 
 
         setQualities(levels);
+
+        // Attempt Auto-Play after load
+        video.play().catch(err => {
+            console.warn('[VideoPlayer] Auto-play blocked or failed:', err);
+            setIsPlaying(false);
+        });
       });
-    } else {
-      // Native Playback (MP4 or Native HLS Safari)
+
+      hls.on(Hls.Events.ERROR, (event, data) => {
+          if (data.fatal) {
+            console.error('[VideoPlayer] HLS Fatal Error:', data);
+          }
+      });
+
+    } else if (video.canPlayType('application/vnd.apple.mpegurl') || !isHlsSource) {
+      // Native HLS (Safari) or standard MP4
+      console.log('[VideoPlayer] Using Native Playback');
       video.src = src;
       
-      // Safari Native HLS support check
-      if (isHlsSource && video.canPlayType('application/vnd.apple.mpegurl')) {
-          // Native HLS usually doesn't expose quality levels easily via JS
-          setIsHlsSupported(false); 
-      } else {
-          // Regular MP4
-          setIsHlsSupported(false);
+      // Check native HLS support for quality UI toggle (usually not available natively)
+      if (isHlsSource) {
+         setIsHlsSupported(false); 
       }
+
+      video.load();
+      // Attempt Auto-Play
+      video.play().catch(err => {
+          console.warn('[VideoPlayer] Auto-play blocked or failed:', err);
+          setIsPlaying(false);
+      });
     }
 
-    // Apply playback rate on source change
+    // Restore user preference for playback rate
     video.playbackRate = playbackRate;
 
-    const updateProgress = () => {
-      if (video) {
-        setProgress((video.currentTime / video.duration) * 100);
-        setDuration(video.duration);
-      }
-    };
-
-    const handleEnded = () => {
-        setIsPlaying(false);
-        if (onEnded) onEnded();
-    };
-
-    video.addEventListener('timeupdate', updateProgress);
-    video.addEventListener('play', () => setIsPlaying(true));
-    video.addEventListener('pause', () => setIsPlaying(false));
-    video.addEventListener('ended', handleEnded);
-
+    // Cleanup on unmount or src change
     return () => {
+      console.log('[VideoPlayer] Cleanup useEffect');
       if (hlsRef.current) {
         hlsRef.current.destroy();
+        hlsRef.current = null;
       }
-      video.removeEventListener('timeupdate', updateProgress);
-      video.removeEventListener('ended', handleEnded);
     };
   }, [src]);
+
+  // --- Event Handlers ---
+
+  const handleVideoEnded = () => {
+      console.log('[VideoPlayer] Video ended event fired');
+      setIsPlaying(false);
+      if (onEnded) {
+          console.log('[VideoPlayer] Calling onEnded callback');
+          onEnded();
+      }
+  };
+
+  const updateProgress = () => {
+    if (videoRef.current) {
+      setProgress((videoRef.current.currentTime / videoRef.current.duration) * 100);
+      setDuration(videoRef.current.duration);
+    }
+  };
+
+  const handlePlayPause = () => {
+      const video = videoRef.current;
+      if (video) {
+          if (video.paused || video.ended) {
+              video.play();
+              setIsPlaying(true);
+          } else {
+              video.pause();
+              setIsPlaying(false);
+          }
+      }
+  };
+
+  // Bind Standard Events
+  useEffect(() => {
+      const video = videoRef.current;
+      if (!video) return;
+
+      const onPlay = () => setIsPlaying(true);
+      const onPause = () => setIsPlaying(false);
+
+      video.addEventListener('timeupdate', updateProgress);
+      video.addEventListener('play', onPlay);
+      video.addEventListener('pause', onPause);
+      
+      // NOTE: 'ended' is handled via JSX prop to ensure no duplicate listeners
+      
+      return () => {
+          video.removeEventListener('timeupdate', updateProgress);
+          video.removeEventListener('play', onPlay);
+          video.removeEventListener('pause', onPause);
+      };
+  }, []);
 
   // Apply playback rate when state changes
   useEffect(() => {
@@ -127,15 +198,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
     }
   }, [playbackRate]);
 
-  const togglePlay = () => {
-    if (videoRef.current) {
-      if (isPlaying) {
-        videoRef.current.pause();
-      } else {
-        videoRef.current.play();
-      }
-    }
-  };
+  // --- UI Helpers ---
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = parseFloat(e.target.value);
@@ -181,7 +244,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
     const newState = !showSpeedMenu;
     setShowSpeedMenu(newState);
     if (newState) {
-      setShowQualityMenu(false); // Close quality menu
+      setShowQualityMenu(false); 
       resetControlsTimeout();
     }
   };
@@ -198,7 +261,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
     const newState = !showQualityMenu;
     setShowQualityMenu(newState);
     if (newState) {
-      setShowSpeedMenu(false); // Close speed menu
+      setShowSpeedMenu(false); 
       resetControlsTimeout();
     }
   };
@@ -216,11 +279,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
       window.clearTimeout(controlsTimeoutRef.current);
     }
     
-    // Don't auto-hide if any menu is open
     if (showSpeedMenu || showQualityMenu) return;
 
     controlsTimeoutRef.current = window.setTimeout(() => {
-      // Check ref directly to avoid stale closure on isPlaying
       if (videoRef.current && !videoRef.current.paused) {
           setShowControls(false);
       }
@@ -228,7 +289,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
   };
 
   const handleMouseLeave = () => {
-    // Keep controls if menu is open
     if (showSpeedMenu || showQualityMenu) return;
     if (isPlaying) setShowControls(false);
   };
@@ -256,8 +316,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
       <video
         ref={videoRef}
         poster={poster}
+        onEnded={handleVideoEnded}
+        onClick={handlePlayPause}
         className="w-full h-full object-contain"
-        onClick={togglePlay}
         playsInline
       />
       
@@ -281,7 +342,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button onClick={togglePlay} className="text-white hover:text-brand-orange transition-colors">
+            <button onClick={handlePlayPause} className="text-white hover:text-brand-orange transition-colors">
               {isPlaying ? <Pause className="h-6 w-6 fill-current" /> : <Play className="h-6 w-6 fill-current" />}
             </button>
             
@@ -374,7 +435,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ src, poster, onEnded }
       {!isPlaying && (
         <div 
           className="absolute inset-0 flex items-center justify-center bg-black/30 cursor-pointer"
-          onClick={togglePlay}
+          onClick={handlePlayPause}
         >
           <div className="bg-brand-orange/90 rounded-full p-6 shadow-lg shadow-brand-orange/20 transform hover:scale-110 transition-transform">
             <Play className="h-8 w-8 text-white fill-current ml-1" />
