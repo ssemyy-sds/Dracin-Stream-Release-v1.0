@@ -77,6 +77,10 @@ export const WatchPage: React.FC = () => {
     }
   };
 
+  const handleEpisodeSelect = (episode: Episode) => {
+    setCurrentEpisode(episode);
+  };
+
   if (loading) {
     return (
         <div className="min-h-screen bg-black flex items-center justify-center">
@@ -133,6 +137,8 @@ export const WatchPage: React.FC = () => {
                     episodeCurrent={currentIndex + 1}
                     episodeTotal={episodes.length}
                     title={currentEpisode?.chapterName || drama.bookName}
+                    episodes={episodes}
+                    onEpisodeSelect={handleEpisodeSelect}
                 />
             ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center text-gray-500 gap-2">

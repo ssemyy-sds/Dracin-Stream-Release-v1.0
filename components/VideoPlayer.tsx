@@ -3,14 +3,15 @@ import React, { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { 
   Play, Pause, Volume2, VolumeX, Maximize, Settings, 
-  Check, SkipBack, SkipForward, List, ChevronLeft 
+  Check, SkipBack, SkipForward, List, ChevronLeft, X
 } from 'lucide-react';
+import { Episode } from '../types';
 
 interface VideoPlayerProps {
   src: string;
   poster?: string;
   onEnded?: () => void;
-  // New props for integrated navigation
+  // Navigation props
   onNext?: () => void;
   onPrev?: () => void;
   hasNext?: boolean;
@@ -18,6 +19,9 @@ interface VideoPlayerProps {
   episodeCurrent?: number;
   episodeTotal?: number;
   title?: string;
+  // Episode List Props
+  episodes?: Episode[];
+  onEpisodeSelect?: (episode: Episode) => void;
 }
 
 interface QualityLevel {
@@ -35,7 +39,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   hasPrev,
   episodeCurrent,
   episodeTotal,
-  title
+  title,
+  episodes = [],
+  onEpisodeSelect
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,6 +55,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [currentTime, setCurrentTime] = useState(0);
   const [showControls, setShowControls] = useState(true);
   
+  // Episode List State
+  const [showEpisodeList, setShowEpisodeList] = useState(false);
+
   // Speed Control State
   const [playbackRate, setPlaybackRate] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
@@ -206,12 +215,25 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setShowSpeedMenu(false);
   };
 
+  const toggleEpisodeList = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowEpisodeList(!showEpisodeList);
+    // Hide controls momentarily so they don't overlap visually if needed, though z-index handles it
+  };
+
+  const selectEpisode = (ep: Episode) => {
+    if (onEpisodeSelect) {
+      onEpisodeSelect(ep);
+      setShowEpisodeList(false);
+    }
+  };
+
   const handleMouseMove = () => {
     setShowControls(true);
     if (controlsTimeoutRef.current) {
       window.clearTimeout(controlsTimeoutRef.current);
     }
-    if (showSpeedMenu || showQualityMenu) return;
+    if (showSpeedMenu || showQualityMenu || showEpisodeList) return;
 
     controlsTimeoutRef.current = window.setTimeout(() => {
       if (videoRef.current && !videoRef.current.paused) {
@@ -233,7 +255,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       className="relative w-full h-full bg-black group overflow-hidden select-none"
       onMouseMove={handleMouseMove}
       onClick={handleMouseMove}
-      onMouseLeave={() => isPlaying && setShowControls(false)}
+      onMouseLeave={() => isPlaying && !showEpisodeList && setShowControls(false)}
     >
       {/* Video Element: Object Cover for Full Vertical Immersion */}
       <video
@@ -248,8 +270,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       {/* Top Gradient Overlay (for Title visibility) */}
       <div className={`absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-black/80 to-transparent pointer-events-none transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}></div>
 
-      {/* Center Play Button (Only visible when paused) */}
-      {!isPlaying && (
+      {/* Center Play Button (Only visible when paused and list is closed) */}
+      {!isPlaying && !showEpisodeList && (
         <div 
           className="absolute inset-0 flex items-center justify-center bg-black/20 cursor-pointer z-10"
           onClick={handlePlayPause}
@@ -260,8 +282,44 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         </div>
       )}
 
+      {/* Episode List Overlay (Drawer) */}
+      {showEpisodeList && (
+        <div 
+            className="absolute inset-0 z-50 bg-black/95 backdrop-blur-sm flex flex-col animate-in slide-in-from-bottom-10 fade-in duration-300"
+            onClick={(e) => e.stopPropagation()} 
+        >
+            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-black">
+                <h3 className="text-white font-bold text-lg">Episodes ({episodes.length})</h3>
+                <button 
+                    onClick={() => setShowEpisodeList(false)}
+                    className="p-2 text-gray-400 hover:text-white bg-white/10 rounded-full transition-colors"
+                >
+                    <X className="h-5 w-5" />
+                </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-3">
+                    {episodes.map((ep) => (
+                        <button
+                            key={ep.chapterId}
+                            onClick={() => selectEpisode(ep)}
+                            className={`py-3 px-2 rounded-lg text-sm font-semibold transition-all duration-200 border ${
+                                episodeCurrent === ep.chapterIndex
+                                ? 'bg-brand-orange border-brand-orange text-white shadow-[0_0_15px_#FF6600]'
+                                : 'bg-gray-800 border-transparent text-gray-300 hover:bg-gray-700 hover:text-white hover:border-gray-600'
+                            }`}
+                        >
+                            {ep.chapterIndex}
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </div>
+      )}
+
       {/* Bottom Controls Overlay */}
-      <div className={`absolute bottom-0 left-0 right-0 z-20 transition-all duration-300 ${showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+      <div className={`absolute bottom-0 left-0 right-0 z-20 transition-all duration-300 ${showControls && !showEpisodeList ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
         
         {/* Background Gradient */}
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-transparent -z-10 h-[180px] bottom-0 top-auto"></div>
@@ -303,7 +361,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     <button onClick={handlePlayPause} className="text-white hover:text-brand-orange transition-colors">
                         {isPlaying ? <Pause className="h-6 w-6 fill-current" /> : <Play className="h-6 w-6 fill-current" />}
                     </button>
-                    <button className="text-white/80 hover:text-white">
+                    <button 
+                        onClick={toggleEpisodeList}
+                        className="text-white/80 hover:text-white hover:scale-110 transition-all"
+                        title="Episode List"
+                    >
                         <List className="h-6 w-6" />
                     </button>
                 </div>
