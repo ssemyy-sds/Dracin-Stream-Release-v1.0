@@ -67,13 +67,20 @@ export const Navbar: React.FC = () => {
               />
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             </form>
+            
+            {/* 
+              REMOVED: Dummy Bell and JD Profile 
+              Uncomment below when Backend Auth/Notifications are ready
+            */}
+            {/* 
             <Bell className="h-5 w-5 text-gray-300 hover:text-white cursor-pointer transition-colors" />
             <div className="h-8 w-8 rounded bg-gradient-to-br from-brand-orange to-red-600 flex items-center justify-center font-bold text-white text-xs shadow-lg">
               JD
-            </div>
+            </div> 
+            */}
           </div>
 
-          {/* Mobile Menu Button - REMOVED SEARCH ICON HERE */}
+          {/* Mobile Menu Button */}
           <div className="md:hidden flex items-center gap-4">
              <button 
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
