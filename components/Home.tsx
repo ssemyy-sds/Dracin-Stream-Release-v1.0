@@ -101,7 +101,7 @@ export const Home: React.FC = () => {
       
       {/* 
         INTERACTIVE HERO CAROUSEL 
-        Matches the reference style: Full immersive background, bottom text, white button.
+        Matches the reference style: Full immersive background, bottom text, orange button.
       */}
       {heroSlides.length > 0 && (
         <div className="relative w-full h-[85vh] md:h-[90vh] overflow-hidden mb-8 group">
@@ -156,12 +156,12 @@ export const Home: React.FC = () => {
                                 {slide.introduction}
                             </p>
 
-                            {/* Action Button - Reference Style (White Button) */}
+                            {/* Action Button - Brand Orange Style */}
                             <button
                                 onClick={() => navigate(`/watch/${slide.bookId}`)}
-                                className="w-full md:w-auto px-8 py-3.5 bg-white text-black hover:bg-gray-200 transition-colors rounded-xl font-bold flex items-center justify-center gap-2 mb-4 shadow-lg shadow-white/10"
+                                className="w-full md:w-auto px-8 py-3.5 bg-brand-orange text-white hover:bg-orange-600 transition-colors rounded-xl font-bold flex items-center justify-center gap-2 mb-4 shadow-lg shadow-brand-orange/20"
                             >
-                                <Play className="h-5 w-5 fill-black" />
+                                <Play className="h-5 w-5 fill-white" />
                                 Tonton Sekarang
                             </button>
 
