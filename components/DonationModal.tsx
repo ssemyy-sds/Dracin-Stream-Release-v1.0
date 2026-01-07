@@ -11,9 +11,10 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
   // Define base filename
   const fileName = "qrcode_sds.png";
   
-  // Construct path safely using Vite's BASE_URL
-  const baseUrl = import.meta.env.BASE_URL;
-  const initialPath = `${baseUrl.endsWith('/') ? baseUrl : baseUrl + '/'}${fileName}`;
+  // Use absolute path directly. 
+  // Files in the 'public' folder are served at the root '/' URL.
+  // Using '/' ensures it works regardless of the current route (e.g. /watch/123).
+  const initialPath = `/${fileName}`;
 
   const [imgSrc, setImgSrc] = useState(initialPath);
   const [retryAttempt, setRetryAttempt] = useState(0);
