@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Coffee } from 'lucide-react';
 
 interface DonationModalProps {
@@ -8,6 +8,39 @@ interface DonationModalProps {
 }
 
 export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose }) => {
+  // Define base filename
+  const fileName = "qrcode_sds.png";
+  
+  // Construct path safely using Vite's BASE_URL
+  const baseUrl = import.meta.env.BASE_URL;
+  const initialPath = `${baseUrl.endsWith('/') ? baseUrl : baseUrl + '/'}${fileName}`;
+
+  const [imgSrc, setImgSrc] = useState(initialPath);
+  const [retryAttempt, setRetryAttempt] = useState(0);
+
+  // Reset state when modal opens
+  useEffect(() => {
+    if (isOpen) {
+        setImgSrc(initialPath);
+        setRetryAttempt(0);
+    }
+  }, [isOpen, initialPath]);
+
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+    // Attempt 1: Try Uppercase Extension (Common issue on Linux/Vercel)
+    if (retryAttempt === 0) {
+        console.warn(`Gagal memuat ${imgSrc}, mencoba ekstensi .PNG...`);
+        const nextSrc = imgSrc.replace('.png', '.PNG');
+        setImgSrc(nextSrc);
+        setRetryAttempt(1);
+    } 
+    // Final Fallback: Use API QR Generator
+    else {
+        console.warn(`Gagal memuat QR Code lokal. Menggunakan fallback API.`);
+        e.currentTarget.src = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https://dracin.stream&color=000000";
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -42,20 +75,11 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
 
         {/* QR Code Container */}
         <div className="bg-white p-4 rounded-2xl mx-auto w-64 h-64 flex items-center justify-center mb-6 shadow-lg shadow-brand-orange/10">
-            {/* 
-                FIX: Menambahkan '/' di depan filename.
-                Ini memaksa browser mencari file di root domain (public folder), 
-                bukan relative terhadap URL halaman saat ini.
-            */}
             <img 
-              src="/qrcode_sds.png" 
+              src={imgSrc} 
               alt="QRIS Code SDS" 
               className="w-full h-full object-contain mix-blend-multiply"
-              onError={(e) => {
-                // Fallback otomatis ke QR code default jika file lokal gagal dimuat
-                console.warn("Gagal memuat /qrcode_sds.png, menggunakan fallback.");
-                e.currentTarget.src = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https://dracin.stream&color=000000";
-              }}
+              onError={handleImageError}
             />
         </div>
 
