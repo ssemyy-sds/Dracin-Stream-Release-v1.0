@@ -8,38 +8,31 @@ interface DonationModalProps {
 }
 
 export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose }) => {
-  // Define base filename
-  const fileName = "qrcode_sds.png";
+  // Gunakan path absolut standard. Pastikan file "qrcode_sds.png" ada di folder "public" root project.
+  const DEFAULT_QR = "/qrcode_sds.png";
   
-  // Use absolute path directly. 
-  // Files in the 'public' folder are served at the root '/' URL.
-  // Using '/' ensures it works regardless of the current route (e.g. /watch/123).
-  const initialPath = `/${fileName}`;
+  // Fallback ke QR Generator jika file lokal benar-benar tidak ada/gagal load
+  const FALLBACK_QR = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https://dracin.stream&color=000000";
 
-  const [imgSrc, setImgSrc] = useState(initialPath);
-  const [retryAttempt, setRetryAttempt] = useState(0);
+  const [imgSrc, setImgSrc] = useState(DEFAULT_QR);
+  const [hasError, setHasError] = useState(false);
 
-  // Reset state when modal opens
+  // Reset state saat modal dibuka
   useEffect(() => {
     if (isOpen) {
-        setImgSrc(initialPath);
-        setRetryAttempt(0);
+        // Tambahkan timestamp untuk menghindari cache browser menyimpan status 404 sebelumnya
+        setImgSrc(`${DEFAULT_QR}?t=${new Date().getTime()}`);
+        setHasError(false);
     }
-  }, [isOpen, initialPath]);
+  }, [isOpen]);
 
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
-    // Attempt 1: Try Uppercase Extension (Common issue on Linux/Vercel)
-    if (retryAttempt === 0) {
-        console.warn(`Gagal memuat ${imgSrc}, mencoba ekstensi .PNG...`);
-        const nextSrc = imgSrc.replace('.png', '.PNG');
-        setImgSrc(nextSrc);
-        setRetryAttempt(1);
-    } 
-    // Final Fallback: Use API QR Generator
-    else {
-        console.warn(`Gagal memuat QR Code lokal. Menggunakan fallback API.`);
-        e.currentTarget.src = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https://dracin.stream&color=000000";
-    }
+    // Jika sudah error sekali (sudah mencoba fallback), jangan loop
+    if (hasError) return;
+    
+    // Switch ke fallback online secara diam-diam tanpa spam console.warn
+    setHasError(true);
+    setImgSrc(FALLBACK_QR);
   };
 
   if (!isOpen) return null;
