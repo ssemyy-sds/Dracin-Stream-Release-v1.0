@@ -4,17 +4,23 @@ export interface Drama {
   bookName: string; // Was title
   cover: string;    // Was thumbnail/poster
   introduction: string; // Was description
-  
+
   // Additional/Derived fields
   rating: number;
   genres: string[];
   status: 'Ongoing' | 'Completed';
   year: number;
   latestEpisode: number;
-  
+
   // Optional raw fields from API for reference
   chapterCount?: number;
   viewCount?: number;
+}
+
+export interface QualityOption {
+  quality: number;      // e.g., 720, 1080
+  videoUrl: string;     // Direct video URL for this quality
+  isDefault?: boolean;
 }
 
 export interface Episode {
@@ -22,9 +28,12 @@ export interface Episode {
   chapterIndex: number;
   chapterName: string; // Was title
   cover?: string;      // Episode specific cover
-  
-  // Pre-processed video URL from cdnList
+
+  // Default/Primary video URL (usually 720p)
   videoUrl: string;
+
+  // All available quality options
+  qualityOptions: QualityOption[];
 }
 
 export interface ApiResponse<T> {

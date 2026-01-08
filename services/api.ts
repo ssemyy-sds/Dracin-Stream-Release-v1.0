@@ -1,5 +1,5 @@
 
-import { Drama, Episode } from '../types';
+import { Drama, Episode, QualityOption } from '../types';
 
 const BASE_URL = '/api';
 
@@ -7,13 +7,13 @@ const BASE_URL = '/api';
 
 const fixUrl = (url?: string) => {
     if (!url || url === 'undefined' || url === 'null') return '';
-    
+
     // Handle standard protocol-less URLs
     if (url.startsWith('//')) return `https:${url}`;
-    
+
     // Handle relative paths
     if (url.startsWith('/uploads') || url.startsWith('/images')) {
-       return `${window.location.origin}${url}`; 
+        return `${window.location.origin}${url}`;
     }
 
     if (!url.startsWith('http')) {
@@ -21,7 +21,7 @@ const fixUrl = (url?: string) => {
         if (url.includes('.') && !url.includes(' ')) return `https://${url}`;
         return url;
     }
-    
+
     return url.replace('http://', 'https://');
 };
 
@@ -30,12 +30,12 @@ const extractVideoUrl = (cdnList: any[]): string => {
 
     // 1. Get Default CDN or first one
     const cdn = cdnList.find((c) => c.isDefault === 1) || cdnList[0];
-    
+
     if (!cdn || !Array.isArray(cdn.videoPathList)) return '';
 
     // 2. Find Quality 720p (preferred)
     let bestVideo = cdn.videoPathList.find((v: any) => v.quality === 720);
-    
+
     // 3. Fallback to 1080p or any default
     if (!bestVideo) bestVideo = cdn.videoPathList.find((v: any) => v.quality === 1080);
     if (!bestVideo) bestVideo = cdn.videoPathList.find((v: any) => v.isDefault === 1);
@@ -44,12 +44,34 @@ const extractVideoUrl = (cdnList: any[]): string => {
     return fixUrl(bestVideo?.videoPath);
 };
 
+// Extract ALL quality options from cdnList
+const extractAllQualityOptions = (cdnList: any[]): QualityOption[] => {
+    if (!Array.isArray(cdnList) || cdnList.length === 0) return [];
+
+    // Get Default CDN or first one
+    const cdn = cdnList.find((c) => c.isDefault === 1) || cdnList[0];
+
+    if (!cdn || !Array.isArray(cdn.videoPathList)) return [];
+
+    // Map all quality options
+    const qualityOptions: QualityOption[] = cdn.videoPathList
+        .filter((v: any) => v.quality && v.videoPath)
+        .map((v: any) => ({
+            quality: parseInt(v.quality),
+            videoUrl: fixUrl(v.videoPath),
+            isDefault: v.isDefault === 1
+        }))
+        .sort((a: QualityOption, b: QualityOption) => b.quality - a.quality); // Sort by quality desc (1080 first)
+
+    return qualityOptions;
+};
+
 // --- Normalization ---
 
 const normalizeDrama = (item: any): Drama => {
     // Determine ID
     const id = item.bookId?.toString() || item.book_id?.toString() || item.id?.toString() || crypto.randomUUID();
-    
+
     // Determine Cover
     const cover = fixUrl(item.cover || item.coverWap || item.poster || item.image || item.thumbnail);
     const PLACEHOLDER = 'https://placehold.co/300x450/1e1e1e/FFF?text=No+Cover';
@@ -65,7 +87,7 @@ const normalizeDrama = (item: any): Drama => {
         bookName: item.bookName || item.book_name || item.title || item.name || 'Unknown Title',
         cover: cover || PLACEHOLDER,
         introduction: item.introduction || item.intro || item.synopsis || item.description || 'No synopsis available.',
-        
+
         rating: parseFloat(item.score || item.rating || '9.0'),
         genres: genres,
         status: item.status || (item.updateStatus === 1 ? 'Completed' : 'Ongoing'),
@@ -79,9 +101,9 @@ const normalizeEpisode = (item: any, arrayIndex: number): Episode => {
     // Priority: chapterIndex -> episode -> arrayIndex
     let rawIndex = item.chapterIndex;
     if (rawIndex === undefined || rawIndex === null) rawIndex = item.episode;
-    
+
     let indexVal = parseInt(rawIndex);
-    
+
     // Fallback: If index is NaN, use the array index + 1
     if (isNaN(indexVal)) {
         indexVal = arrayIndex + 1;
@@ -93,12 +115,16 @@ const normalizeEpisode = (item: any, arrayIndex: number): Episode => {
     const displayNum = indexVal === 0 ? 1 : indexVal;
     const title = item.chapterName || item.title || `Episode ${displayNum}`;
 
+    // Extract quality options
+    const qualityOptions = extractAllQualityOptions(item.cdnList || []);
+
     return {
         chapterId: item.chapterId?.toString() || crypto.randomUUID(),
         chapterIndex: indexVal,
         chapterName: title,
         cover: fixUrl(item.cover || item.image),
-        videoUrl: extractVideoUrl(item.cdnList || []) || fixUrl(item.url || item.stream_url)
+        videoUrl: extractVideoUrl(item.cdnList || []) || fixUrl(item.url || item.stream_url),
+        qualityOptions: qualityOptions
     };
 };
 
@@ -124,11 +150,11 @@ const fetchFromApi = async (endpoint: string, params: Record<string, string> = {
 
 const getById = async (bookId: string): Promise<Drama | undefined> => {
     const json = await fetchFromApi('detail', { bookId });
-    
+
     if (json && json.data && json.data.book) {
         return normalizeDrama(json.data.book);
     }
-    
+
     if (json && (json.bookId || json.bookName)) {
         return normalizeDrama(json);
     }
@@ -147,7 +173,7 @@ const getEpisodes = async (bookId: string): Promise<Episode[]> => {
     }
 
     const episodes = rawList.map((item, index) => normalizeEpisode(item, index));
-    
+
     return episodes.sort((a, b) => a.chapterIndex - b.chapterIndex);
 };
 
@@ -186,9 +212,9 @@ const getVip = (page: number = 1) => getList('vip', { page: page.toString() });
 
 // Updated Dub Indo to accept pagination and classify
 const getDubIndo = (page: number = 1, classify: string = 'terpopuler') => {
-    return getList('dubindo', { 
-        classify: classify, 
-        page: page.toString() 
+    return getList('dubindo', {
+        classify: classify,
+        page: page.toString()
     });
 };
 
