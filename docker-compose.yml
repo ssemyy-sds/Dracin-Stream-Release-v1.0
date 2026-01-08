@@ -1,0 +1,13 @@
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - UPSTREAM_API_URL=https://api.sansekai.my.id
+      - SECONDARY_API_URL=https://api.gimita.id/api
