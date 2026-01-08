@@ -1,257 +1,282 @@
 
 import React, { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { dramaService } from '../services/api';
 import { Drama } from '../types';
-import { Play, TrendingUp, Clock, Star, Gift, ChevronRight, MessageCircle } from 'lucide-react';
 import { DramaCard } from './DramaCard';
-import { Button } from './ui/Button';
-import { useNavigate } from 'react-router-dom';
+import { Play, Info, Star, Calendar, Coffee, ChevronRight, Clock } from 'lucide-react';
 import { DonationModal } from './DonationModal';
 
-export const Home = () => {
-    const [trending, setTrending] = useState<Drama[]>([]);
-    const [popular, setPopular] = useState<Drama[]>([]);
-    const [latest, setLatest] = useState<Drama[]>([]);
-    const [recent, setRecent] = useState<Drama[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [currentHeroIndex, setCurrentHeroIndex] = useState(0);
-    const [isDonationOpen, setIsDonationOpen] = useState(false);
-    const navigate = useNavigate();
+export const Home: React.FC = () => {
+  const [trending, setTrending] = useState<Drama[]>([]);
+  const [popular, setPopular] = useState<Drama[]>([]);
+  const [recent, setRecent] = useState<Drama[]>([]);
+  
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        const fetchDramas = async () => {
-            setLoading(true);
-            try {
-                const [trendData, popData, latestData, recentData] = await Promise.all([
-                    dramaService.getTrending(),
-                    dramaService.getPopularDramas(),
-                    dramaService.getLatestDramas(),
-                    dramaService.getLatest() // Using forYou or latest
-                ]);
-                setTrending(trendData.slice(0, 10));
-                setPopular(popData.slice(0, 12));
-                setLatest(latestData.slice(0, 12));
-                setRecent(recentData.slice(0, 5));
-            } catch (err) {
-                console.error("Failed to fetch dramas:", err);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchDramas();
-    }, []);
+  // Hero Carousel State
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [heroSlides, setHeroSlides] = useState<Drama[]>([]);
 
-    // Auto-advance hero carousel
-    useEffect(() => {
-        if (recent.length === 0) return;
-        const timer = setInterval(() => {
-            setCurrentHeroIndex((prev) => (prev + 1) % recent.length);
-        }, 8000);
-        return () => clearInterval(timer);
-    }, [recent.length]);
+  // Donation Modal State
+  const [showDonation, setShowDonation] = useState(false);
+  const navigate = useNavigate();
 
-    if (loading) {
-        return (
-            <div className="min-h-screen bg-brand-black flex items-center justify-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-orange"></div>
-            </div>
-        );
+  useEffect(() => {
+    async function loadData() {
+      try {
+        setLoading(true);
+        // Fetch all data in parallel
+        const [trendingData, popularData, recentData] = await Promise.all([
+            dramaService.getTrending(),
+            dramaService.getPopularDramas(),
+            dramaService.getLatestDramas()
+        ]);
+
+        setTrending(trendingData);
+        setPopular(popularData);
+        setRecent(recentData);
+
+        // Mix Trending and Recent for the Hero Slider
+        // Take top 3 trending and top 3 recent
+        const slides = [
+            ...trendingData.slice(0, 3).map(d => ({...d, _source: 'Trending'} as any)),
+            ...recentData.slice(0, 3).map(d => ({...d, _source: 'Recently Added'} as any))
+        ];
+        setHeroSlides(slides);
+
+      } catch (err: any) {
+        console.error('[Home] Error loading content:', err);
+        setError(err.message || 'Failed to load content');
+      } finally {
+        setLoading(false);
+      }
     }
 
-    const currentHero = recent[currentHeroIndex] || trending[0];
+    loadData();
+  }, []);
 
+  // Auto-slide effect
+  useEffect(() => {
+    if (heroSlides.length === 0) return;
+    
+    // Interval ganti slide (default 5-8 detik agar user sempat membaca)
+    const interval = setInterval(() => {
+        setCurrentSlide((prev) => (prev + 1) % heroSlides.length);
+    }, 5000); 
+
+    return () => clearInterval(interval);
+  }, [heroSlides.length]);
+
+  if (loading) {
     return (
-        <div className="min-h-screen bg-brand-black">
-            {/* Hero Section */}
-            <div className="relative h-[85vh] md:h-[90vh] w-full overflow-hidden group">
-                <div className="absolute inset-0 bg-gradient-to-t from-brand-black via-brand-black/40 to-transparent z-10" />
-                <div className="absolute inset-0 bg-gradient-to-r from-brand-black via-brand-black/20 to-transparent z-10" />
-
-                {/* Main Hero Background with transition */}
-                <div className="absolute inset-0 transition-all duration-1000 transform group-hover:scale-105">
-                    {recent.length > 0 && recent.map((drama, idx) => (
-                        <div
-                            key={drama.bookId}
-                            className={`absolute inset-0 transition-opacity duration-1000 ${idx === currentHeroIndex ? 'opacity-100' : 'opacity-0'}`}
-                        >
-                            <img
-                                src={drama.cover}
-                                alt={drama.bookName}
-                                className="w-full h-full object-cover"
-                            />
-                        </div>
-                    ))}
-                    {!recent.length && trending[0] && (
-                        <img
-                            src={trending[0].cover}
-                            alt={trending[0].bookName}
-                            className="w-full h-full object-cover"
-                        />
-                    )}
-                </div>
-
-                <div className="container mx-auto px-4 h-full flex flex-col justify-end pb-20 relative z-20">
-                    <div className="max-w-3xl animate-in slide-in-from-left duration-700">
-                        {currentHero?.status === 'Completed' && (
-                            <span className="bg-brand-orange/20 text-brand-orange backdrop-blur-md px-3 py-1 rounded-full text-xs font-bold mb-4 inline-block border border-brand-orange/30">
-                                FULL EPISODE
-                            </span>
-                        )}
-                        <h2 className="text-4xl md:text-7xl font-black text-white mb-4 leading-tight drop-shadow-2xl">
-                            {currentHero?.bookName}
-                        </h2>
-
-                        <div className="flex flex-wrap items-center gap-4 text-sm md:text-base text-gray-200 mb-8 font-medium">
-                            <div className="flex items-center gap-1.5 bg-black/40 backdrop-blur-md px-2 py-1 rounded">
-                                <Star className="h-4 w-4 text-yellow-400 fill-current" />
-                                <span>{currentHero?.rating || '9.2'}</span>
-                            </div>
-                            <span>•</span>
-                            <span>{currentHero?.year || '2024'}</span>
-                            <span>•</span>
-                            <div className="flex gap-2">
-                                {currentHero?.genres.slice(0, 2).map((g, idx) => (
-                                    <span key={idx} className="bg-white/10 backdrop-blur-md px-2 py-0.5 rounded text-xs">{g}</span>
-                                ))}
-                            </div>
-                        </div>
-
-                        <p className="text-gray-300 text-sm md:text-lg mb-8 line-clamp-3 md:line-clamp-2 max-w-2xl leading-relaxed drop-shadow">
-                            {currentHero?.introduction}
-                        </p>
-
-                        <div className="flex flex-wrap items-center gap-4">
-                            <Button
-                                size="lg"
-                                className="rounded-full px-8 gap-2 font-black shadow-2xl shadow-brand-orange/40 hover:scale-105 active:scale-95 transition-all"
-                                onClick={() => navigate(`/watch/${currentHero.bookId}`)}
-                            >
-                                <Play className="h-6 w-6 fill-current" /> MULAI NONTON
-                            </Button>
-                            <Button
-                                variant="secondary"
-                                size="lg"
-                                className="rounded-full px-8 bg-white/10 hover:bg-white/20 border-white/10 backdrop-blur-xl text-white font-bold hover:scale-105 active:scale-95 transition-all"
-                                onClick={() => navigate(`/detail/${currentHero.bookId}`)}
-                            >
-                                INFORMASI DETAIL
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Hero Indicators */}
-                <div className="absolute bottom-8 right-4 z-20 flex gap-2">
-                    {recent.map((_, idx) => (
-                        <button
-                            key={idx}
-                            onClick={() => setCurrentHeroIndex(idx)}
-                            className={`h-1.5 transition-all duration-300 rounded-full ${idx === currentHeroIndex ? 'w-8 bg-brand-orange' : 'w-4 bg-white/20'}`}
-                        />
-                    ))}
-                </div>
-            </div>
-
-            <div className="container mx-auto px-4 py-12 space-y-16">
-                {/* Donation Banner */}
-                <div className="relative overflow-hidden rounded-3xl p-8 flex flex-col md:flex-row items-center justify-between gap-6 bg-gradient-to-r from-orange-600 to-brand-orange shadow-2xl shadow-brand-orange/20 animate-in fade-in duration-1000">
-                    <div className="relative z-10 text-center md:text-left">
-                        <h3 className="text-2xl md:text-3xl font-black text-white mb-2">Dukung Kami Berkembang! 🚀</h3>
-                        <p className="text-orange-50/80 text-sm md:text-base max-w-xl">
-                            Dracin Stream dikelola oleh komunitas secara mandiri. Bantuan donasi Anda sangat berarti untuk biaya server dan maintain layanan agar tetap stabil.
-                        </p>
-                    </div>
-                    <div className="relative z-10 flex flex-col sm:flex-row gap-3">
-                        <Button
-                            onClick={() => setIsDonationOpen(true)}
-                            className="bg-white text-brand-orange hover:bg-orange-50 font-bold px-8 rounded-xl shadow-xl hover:scale-105 transition-transform"
-                        >
-                            Donasi Sekarang
-                        </Button>
-                        <a
-                            href="https://wa.me/628123456789"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center justify-center gap-2 px-6 py-3 bg-black/20 text-white rounded-xl font-bold hover:bg-black/30 transition-all border border-white/10"
-                        >
-                            <MessageCircle className="h-5 w-5" /> Hubungi Admin
-                        </a>
-                    </div>
-                    {/* Visual Decor */}
-                    <Gift className="absolute -right-4 -bottom-4 h-40 w-40 text-white/10 rotate-12" />
-                </div>
-
-                {/* Trending Section */}
-                <section>
-                    <div className="flex items-center justify-between mb-8">
-                        <div className="flex items-center gap-3">
-                            <div className="bg-brand-orange/20 p-2 rounded-lg">
-                                <TrendingUp className="h-6 w-6 text-brand-orange" />
-                            </div>
-                            <h3 className="text-2xl font-black text-white tracking-tight">SEDANG TRENDING</h3>
-                        </div>
-                        <button
-                            onClick={() => navigate('/category/foryou')}
-                            className="text-gray-400 hover:text-brand-orange font-bold text-sm flex items-center gap-1 transition-colors group"
-                        >
-                            Lihat Semua <ChevronRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                        </button>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
-                        {trending.map((drama) => (
-                            <DramaCard key={drama.bookId} drama={drama} />
-                        ))}
-                    </div>
-                </section>
-
-                {/* Popular Search Section */}
-                <section>
-                    <div className="flex items-center justify-between mb-8">
-                        <div className="flex items-center gap-3">
-                            <div className="bg-brand-orange/20 p-2 rounded-lg">
-                                <Star className="h-6 w-6 text-brand-orange" />
-                            </div>
-                            <h3 className="text-2xl font-black text-white tracking-tight">PALING POPULER</h3>
-                        </div>
-                        <button
-                            onClick={() => navigate('/category/trending')}
-                            className="text-gray-400 hover:text-brand-orange font-bold text-sm flex items-center gap-1 transition-colors group"
-                        >
-                            Lihat Semua <ChevronRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                        </button>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
-                        {popular.map((drama) => (
-                            <DramaCard key={drama.bookId} drama={drama} />
-                        ))}
-                    </div>
-                </section>
-
-                {/* Latest Added */}
-                <section className="pb-12">
-                    <div className="flex items-center justify-between mb-8">
-                        <div className="flex items-center gap-3">
-                            <div className="bg-brand-orange/20 p-2 rounded-lg">
-                                <Clock className="h-6 w-6 text-brand-orange" />
-                            </div>
-                            <h3 className="text-2xl font-black text-white tracking-tight">BARU DITAMBAHKAN</h3>
-                        </div>
-                        <button
-                            onClick={() => navigate('/category/latest')}
-                            className="text-gray-400 hover:text-brand-orange font-bold text-sm flex items-center gap-1 transition-colors group"
-                        >
-                            Lihat Semua <ChevronRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                        </button>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
-                        {latest.map((drama) => (
-                            <DramaCard key={drama.bookId} drama={drama} />
-                        ))}
-                    </div>
-                </section>
-            </div>
-
-            <DonationModal isOpen={isDonationOpen} onClose={() => setIsDonationOpen(false)} />
+      <div className="min-h-screen bg-brand-black pt-20 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-orange mx-auto mb-4"></div>
+          <p className="text-gray-400 animate-pulse">Loading best dramas...</p>
         </div>
+      </div>
     );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-brand-black pt-20 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-500 mb-4">Error: {error}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="text-brand-orange hover:underline"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-brand-black relative pb-20">
+      
+      {/* 
+        INTERACTIVE HERO CAROUSEL 
+        Matches the reference style: Full immersive background, bottom text, orange button.
+      */}
+      {heroSlides.length > 0 && (
+        <div className="relative w-full h-[85vh] md:h-[90vh] overflow-hidden mb-8 group">
+            
+            {/* Background Slides */}
+            {heroSlides.map((slide, index) => (
+                <div 
+                    key={`${slide.bookId}-${index}`}
+                    className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${
+                        index === currentSlide ? 'opacity-100 z-10' : 'opacity-0 z-0'
+                    }`}
+                >
+                     {/* Image */}
+                    <div className="absolute inset-0">
+                        <img 
+                            src={slide.cover} 
+                            alt={slide.bookName} 
+                            className="w-full h-full object-cover transform scale-105 group-hover:scale-110 transition-transform duration-[10000ms]"
+                        />
+                        {/* Gradient Overlays for Readability */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-brand-black via-brand-black/60 to-transparent opacity-90" />
+                        <div className="absolute inset-0 bg-gradient-to-r from-brand-black/80 via-transparent to-transparent opacity-60" />
+                    </div>
+
+                    {/* Content Container */}
+                    <div className="absolute inset-0 container mx-auto px-4 flex flex-col justify-end pb-24 md:pb-32">
+                        <div className="max-w-2xl animate-in slide-in-from-bottom-10 fade-in duration-700 delay-100">
+                            
+                            {/* Badges */}
+                            <div className="flex flex-wrap items-center gap-2 mb-4">
+                                <span 
+                                    className={`px-3 py-1 text-xs font-bold rounded-full uppercase tracking-wider backdrop-blur-md border border-white/20 ${
+                                        (slide as any)._source === 'Trending' 
+                                        ? 'bg-brand-orange/20 text-brand-orange' 
+                                        : 'bg-purple-500/20 text-purple-400'
+                                    }`}
+                                >
+                                    {(slide as any)._source === 'Trending' ? `#${index + 1} Featured` : 'Recently Added'}
+                                </span>
+                                <span className="px-3 py-1 bg-white/10 backdrop-blur-md text-gray-200 text-xs font-semibold rounded-full border border-white/10">
+                                    {slide.latestEpisode} Episodes
+                                </span>
+                            </div>
+
+                            {/* Title */}
+                            <h1 className="text-4xl md:text-6xl font-extrabold text-white leading-tight mb-4 drop-shadow-xl line-clamp-2">
+                                {slide.bookName}
+                            </h1>
+
+                            {/* Synopsis / Intro */}
+                            <p className="text-gray-300 text-sm md:text-lg line-clamp-2 md:line-clamp-3 mb-6 max-w-xl">
+                                {slide.introduction}
+                            </p>
+
+                            {/* Action Button - Brand Orange Style */}
+                            <button
+                                onClick={() => navigate(`/watch/${slide.bookId}`)}
+                                className="w-full md:w-auto px-8 py-3.5 bg-brand-orange text-white hover:bg-orange-600 transition-colors rounded-xl font-bold flex items-center justify-center gap-2 mb-4 shadow-lg shadow-brand-orange/20"
+                            >
+                                <Play className="h-5 w-5 fill-white" />
+                                Tonton Sekarang
+                            </button>
+
+                            {/* Mini Tags */}
+                            <div className="flex items-center gap-4 text-xs md:text-sm text-gray-400 font-medium">
+                                <span className="flex items-center gap-1 text-brand-orange">
+                                    <Star className="h-3 w-3 fill-current" /> {slide.rating}
+                                </span>
+                                <span className="w-1 h-1 bg-gray-600 rounded-full" />
+                                <span>{slide.genres[0]}</span>
+                                <span className="w-1 h-1 bg-gray-600 rounded-full" />
+                                <span>{slide.year}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ))}
+
+            {/* Slide Indicators (Top Right) */}
+            <div className="absolute top-24 right-4 z-20 flex gap-1.5">
+                {heroSlides.map((_, idx) => (
+                    <div 
+                        key={idx} 
+                        className={`h-1 rounded-full transition-all duration-300 ${
+                            idx === currentSlide ? 'w-8 bg-brand-orange' : 'w-4 bg-white/30'
+                        }`}
+                    />
+                ))}
+            </div>
+        </div>
+      )}
+
+      {/* Main Content Categories */}
+      <div className="container mx-auto px-4 -mt-10 relative z-10">
+        
+        {/* Recommendation / Trending Strip */}
+        {trending.length > 0 && (
+            <section className="mb-12">
+            <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
+                    <Star className="h-5 w-5 text-brand-orange fill-current" />
+                    Rekomendasi Untukmu
+                </h2>
+                <Link to="/category/trending" className="text-gray-400 text-sm flex items-center hover:text-white">
+                    Lihat Semua <ChevronRight className="h-4 w-4" />
+                </Link>
+            </div>
+            {/* Horizontal Scroll Layout for "Recommendation" feel */}
+            <div className="flex overflow-x-auto gap-4 pb-4 no-scrollbar snap-x">
+                {trending.slice(0, 8).map((drama) => (
+                    <div key={drama.bookId} className="min-w-[140px] md:min-w-[180px] snap-start">
+                        <DramaCard drama={drama} />
+                    </div>
+                ))}
+            </div>
+            </section>
+        )}
+
+        {/* Popular Grid */}
+        {popular.length > 0 && (
+            <section className="mb-12">
+            <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
+                    <div className="w-1 h-6 bg-blue-500 rounded-full"></div>
+                    Popular Dramas
+                </h2>
+            </div>
+            <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-6">
+                {popular.slice(0, 12).map((drama) => (
+                    <DramaCard key={drama.bookId} drama={drama} />
+                ))}
+            </div>
+            </section>
+        )}
+
+        {/* Recently Added Grid */}
+        {recent.length > 0 && (
+            <section>
+            <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
+                     <Clock className="h-5 w-5 text-purple-500" />
+                    Baru Ditambahkan
+                </h2>
+                <Link to="/category/latest" className="text-gray-400 text-sm flex items-center hover:text-white">
+                    Lihat Semua <ChevronRight className="h-4 w-4" />
+                </Link>
+            </div>
+            <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 md:gap-6">
+                {recent.slice(0, 12).map((drama) => (
+                    <DramaCard key={drama.bookId} drama={drama} />
+                ))}
+            </div>
+            </section>
+        )}
+      </div>
+
+      {/* FLOATING DONATION BUTTON */}
+      <div 
+        className="fixed bottom-6 right-6 z-40 flex flex-col items-center gap-2 cursor-pointer group animate-in slide-in-from-bottom-5 duration-700"
+        onClick={() => setShowDonation(true)}
+      >
+        <div className="bg-brand-orange p-3 md:p-4 rounded-full shadow-[0_0_20px_rgba(255,102,0,0.5)] group-hover:scale-110 transition-transform duration-300 relative overflow-hidden">
+            <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-20 transition-opacity"></div>
+            <Coffee className="h-6 w-6 text-white fill-white/20" />
+        </div>
+        <div className="bg-black/80 backdrop-blur-sm px-3 py-1 rounded-full border border-white/10 shadow-lg">
+             <span className="text-[10px] md:text-xs font-bold text-white whitespace-nowrap">Traktir Kopi</span>
+        </div>
+      </div>
+
+      {/* DONATION MODAL */}
+      <DonationModal isOpen={showDonation} onClose={() => setShowDonation(false)} />
+
+    </div>
+  );
 };
+
+export default Home;
