@@ -5,7 +5,7 @@ const BASE_URL = '/api';
 
 // --- Helper Functions ---
 
-const fixUrl = (url?: string) => {
+const fixUrl = (url?: string): string => {
     if (!url || url === 'undefined' || url === 'null') return '';
 
     // Handle standard protocol-less URLs
@@ -25,39 +25,39 @@ const fixUrl = (url?: string) => {
     return url.replace('http://', 'https://');
 };
 
-const extractVideoUrl = (cdnList: any[]): string => {
+const extractVideoUrl = (cdnList: unknown[]): string => {
     if (!Array.isArray(cdnList) || cdnList.length === 0) return '';
 
     // 1. Get Default CDN or first one
-    const cdn = cdnList.find((c) => c.isDefault === 1) || cdnList[0];
+    const cdn = (cdnList as { isDefault?: number; videoPathList?: { quality?: number; isDefault?: number; videoPath?: string }[] }[]).find((c) => c.isDefault === 1) || cdnList[0] as { videoPathList?: { quality?: number; isDefault?: number; videoPath?: string }[] };
 
     if (!cdn || !Array.isArray(cdn.videoPathList)) return '';
 
     // 2. Find Quality 720p (preferred)
-    let bestVideo = cdn.videoPathList.find((v: any) => v.quality === 720);
+    let bestVideo = cdn.videoPathList.find((v) => v.quality === 720);
 
     // 3. Fallback to 1080p or any default
-    if (!bestVideo) bestVideo = cdn.videoPathList.find((v: any) => v.quality === 1080);
-    if (!bestVideo) bestVideo = cdn.videoPathList.find((v: any) => v.isDefault === 1);
+    if (!bestVideo) bestVideo = cdn.videoPathList.find((v) => v.quality === 1080);
+    if (!bestVideo) bestVideo = cdn.videoPathList.find((v) => v.isDefault === 1);
     if (!bestVideo) bestVideo = cdn.videoPathList[0];
 
     return fixUrl(bestVideo?.videoPath);
 };
 
 // Extract ALL quality options from cdnList
-const extractAllQualityOptions = (cdnList: any[]): QualityOption[] => {
+const extractAllQualityOptions = (cdnList: unknown[]): QualityOption[] => {
     if (!Array.isArray(cdnList) || cdnList.length === 0) return [];
 
     // Get Default CDN or first one
-    const cdn = cdnList.find((c) => c.isDefault === 1) || cdnList[0];
+    const cdn = (cdnList as { isDefault?: number; videoPathList?: { quality?: number; isDefault?: number; videoPath?: string }[] }[]).find((c) => c.isDefault === 1) || cdnList[0] as { videoPathList?: { quality?: number; isDefault?: number; videoPath?: string }[] };
 
     if (!cdn || !Array.isArray(cdn.videoPathList)) return [];
 
     // Map all quality options
     const qualityOptions: QualityOption[] = cdn.videoPathList
-        .filter((v: any) => v.quality && v.videoPath)
-        .map((v: any) => ({
-            quality: parseInt(v.quality),
+        .filter((v) => v.quality && v.videoPath)
+        .map((v) => ({
+            quality: typeof v.quality === 'number' ? v.quality : parseInt(String(v.quality)),
             videoUrl: fixUrl(v.videoPath),
             isDefault: v.isDefault === 1
         }))
@@ -68,7 +68,38 @@ const extractAllQualityOptions = (cdnList: any[]): QualityOption[] => {
 
 // --- Normalization ---
 
-const normalizeDrama = (item: any): Drama => {
+interface RawDramaItem {
+    bookId?: string | number;
+    book_id?: string | number;
+    id?: string | number;
+    cover?: string;
+    coverWap?: string;
+    poster?: string;
+    image?: string;
+    thumbnail?: string;
+    tags?: string[];
+    labels?: string[];
+    category?: string;
+    bookName?: string;
+    book_name?: string;
+    title?: string;
+    name?: string;
+    introduction?: string;
+    intro?: string;
+    synopsis?: string;
+    description?: string;
+    score?: string | number;
+    rating?: string | number;
+    status?: string;
+    updateStatus?: number;
+    year?: string | number;
+    shelfTime?: string | number;
+    chapterCount?: string | number;
+    latest_episode?: string | number;
+    viewCount?: number;
+}
+
+const normalizeDrama = (item: RawDramaItem): Drama => {
     // Determine ID
     const id = item.bookId?.toString() || item.book_id?.toString() || item.id?.toString() || crypto.randomUUID();
 
@@ -77,7 +108,7 @@ const normalizeDrama = (item: any): Drama => {
     const PLACEHOLDER = 'https://placehold.co/300x450/1e1e1e/FFF?text=No+Cover';
 
     // Determine Genres
-    let genres = ['Drama'];
+    let genres: string[] = ['Drama'];
     if (Array.isArray(item.tags) && item.tags.length > 0) genres = item.tags;
     else if (Array.isArray(item.labels) && item.labels.length > 0) genres = item.labels;
     else if (item.category) genres = [item.category];
@@ -88,21 +119,34 @@ const normalizeDrama = (item: any): Drama => {
         cover: cover || PLACEHOLDER,
         introduction: item.introduction || item.intro || item.synopsis || item.description || 'No synopsis available.',
 
-        rating: parseFloat(item.score || item.rating || '9.0'),
+        rating: parseFloat(String(item.score || item.rating || '9.0')),
         genres: genres,
-        status: item.status || (item.updateStatus === 1 ? 'Completed' : 'Ongoing'),
-        year: parseInt(item.year || item.shelfTime || new Date().getFullYear()),
-        latestEpisode: parseInt(item.chapterCount || item.latest_episode || '0'),
+        status: (item.status || (item.updateStatus === 1 ? 'Completed' : 'Ongoing')) as 'Ongoing' | 'Completed',
+        year: parseInt(String(item.year || item.shelfTime || new Date().getFullYear())),
+        latestEpisode: parseInt(String(item.chapterCount || item.latest_episode || '0')),
         viewCount: item.viewCount
     };
 };
 
-const normalizeEpisode = (item: any, arrayIndex: number): Episode => {
+interface RawEpisodeItem {
+    chapterIndex?: number | string;
+    episode?: number | string;
+    chapterName?: string;
+    title?: string;
+    chapterId?: string;
+    cover?: string;
+    image?: string;
+    cdnList?: unknown[];
+    url?: string;
+    stream_url?: string;
+}
+
+const normalizeEpisode = (item: RawEpisodeItem, arrayIndex: number): Episode => {
     // Priority: chapterIndex -> episode -> arrayIndex
     let rawIndex = item.chapterIndex;
     if (rawIndex === undefined || rawIndex === null) rawIndex = item.episode;
 
-    let indexVal = parseInt(rawIndex);
+    let indexVal = parseInt(String(rawIndex));
 
     // Fallback: If index is NaN, use the array index + 1
     if (isNaN(indexVal)) {
@@ -130,7 +174,7 @@ const normalizeEpisode = (item: any, arrayIndex: number): Episode => {
 
 // --- API Fetcher ---
 
-const fetchFromApi = async (endpoint: string, params: Record<string, string> = {}, provider: 'primary' | 'secondary' = 'primary') => {
+const fetchFromApi = async (endpoint: string, params: Record<string, string> = {}, provider: 'primary' | 'secondary' = 'primary'): Promise<unknown> => {
     const url = new URL(`${window.location.origin}${BASE_URL}/${endpoint.replace(/^\//, '')}`);
     Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
     if (provider === 'secondary') url.searchParams.append('provider', 'secondary');
@@ -138,7 +182,7 @@ const fetchFromApi = async (endpoint: string, params: Record<string, string> = {
     try {
         const res = await fetch(url.toString());
         if (!res.ok) return null;
-        const json = await res.json();
+        const json: unknown = await res.json();
         return json;
     } catch (e) {
         console.error(`[API] Error fetching ${endpoint}:`, e);
@@ -149,14 +193,14 @@ const fetchFromApi = async (endpoint: string, params: Record<string, string> = {
 // --- Service Implementation ---
 
 const getById = async (bookId: string): Promise<Drama | undefined> => {
-    const json = await fetchFromApi('detail', { bookId });
+    const json = await fetchFromApi('detail', { bookId }) as { data?: { book?: RawDramaItem }; bookId?: string; bookName?: string } | null;
 
     if (json && json.data && json.data.book) {
         return normalizeDrama(json.data.book);
     }
 
     if (json && (json.bookId || json.bookName)) {
-        return normalizeDrama(json);
+        return normalizeDrama(json as unknown as RawDramaItem);
     }
 
     return undefined;
@@ -165,35 +209,35 @@ const getById = async (bookId: string): Promise<Drama | undefined> => {
 const getEpisodes = async (bookId: string): Promise<Episode[]> => {
     const json = await fetchFromApi('allepisode', { bookId });
 
-    let rawList = [];
+    let rawList: RawEpisodeItem[] = [];
     if (Array.isArray(json)) {
-        rawList = json;
-    } else if (json && Array.isArray(json.data)) {
-        rawList = json.data;
+        rawList = json as RawEpisodeItem[];
+    } else if (json && typeof json === 'object' && 'data' in json && Array.isArray((json as { data: unknown }).data)) {
+        rawList = (json as { data: RawEpisodeItem[] }).data;
     }
 
-    const episodes = rawList.map((item, index) => normalizeEpisode(item, index));
+    const episodes = rawList.map((item: RawEpisodeItem, index: number) => normalizeEpisode(item, index));
 
-    return episodes.sort((a, b) => a.chapterIndex - b.chapterIndex);
+    return episodes.sort((a: Episode, b: Episode) => a.chapterIndex - b.chapterIndex);
 };
 
 const getStreamUrl = async (bookId: string, episode: number): Promise<string | null> => {
-    const json = await fetchFromApi('play', { bookId, episode: episode.toString() });
+    const json = await fetchFromApi('play', { bookId, episode: episode.toString() }) as { url?: string } | null;
     if (json && json.url) return fixUrl(json.url);
     return null;
 };
 
 const getTrending = async (): Promise<Drama[]> => {
     const json = await fetchFromApi('trending');
-    const list = Array.isArray(json) ? json : (json?.data || []);
-    return list.map(normalizeDrama);
+    const list = Array.isArray(json) ? json : ((json as { data?: RawDramaItem[] } | null)?.data || []);
+    return (list as RawDramaItem[]).map(normalizeDrama);
 };
 
 // Generic search/category wrapper
-const getList = async (endpoint: string, params: any = {}): Promise<Drama[]> => {
+const getList = async (endpoint: string, params: Record<string, string> = {}): Promise<Drama[]> => {
     const json = await fetchFromApi(endpoint, params);
-    const list = Array.isArray(json) ? json : (json?.data || []);
-    return list.map(normalizeDrama);
+    const list = Array.isArray(json) ? json : ((json as { data?: RawDramaItem[] } | null)?.data || []);
+    return (list as RawDramaItem[]).map(normalizeDrama);
 };
 
 // Specific endpoints as requested
@@ -206,12 +250,12 @@ const getLatestDramas = async (): Promise<Drama[]> => {
 };
 
 // Updated Category Handlers
-const getForYou = () => getList('foryou');
-const getLatest = () => getList('latest');
-const getVip = (page: number = 1) => getList('vip', { page: page.toString() });
+const getForYou = (): Promise<Drama[]> => getList('foryou');
+const getLatest = (): Promise<Drama[]> => getList('latest');
+const getVip = (page: number = 1): Promise<Drama[]> => getList('vip', { page: page.toString() });
 
 // Updated Dub Indo to accept pagination and classify
-const getDubIndo = (page: number = 1, classify: string = 'terpopuler') => {
+const getDubIndo = (page: number = 1, classify: string = 'terpopuler'): Promise<Drama[]> => {
     return getList('dubindo', {
         classify: classify,
         page: page.toString()
@@ -225,12 +269,12 @@ export const dramaService = {
     getTrending,
     getPopularDramas, // Exported
     getLatestDramas,  // Exported
-    search: (q: string) => getList('search', { query: q }),
+    search: (q: string): Promise<Drama[]> => getList('search', { query: q }),
     getForYou,
     getLatest,
     getVip,
     getDubIndo,
-    getByCategory: (cat: string, page: number = 1, classify: string = 'terpopuler') => {
+    getByCategory: (cat: string, page: number = 1, classify: string = 'terpopuler'): Promise<Drama[]> => {
         switch (cat.toLowerCase()) {
             case 'foryou': return getForYou();
             case 'trending': return getTrending();
