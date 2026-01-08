@@ -1,9 +1,8 @@
 
 import React, { useEffect, useState } from 'react';
-import { Play, TrendingUp, Clock, Star, Gift, ChevronRight, Eye, Tag } from 'lucide-react';
+import { Play, ChevronRight, Eye, Tag, RefreshCw, AlertTriangle, Wifi } from 'lucide-react';
 import { Button } from './ui/Button';
 import { useNavigate } from 'react-router-dom';
-import { DramaCard } from './DramaCard';
 
 // Using Gimita Primary API for Test Home
 const GIMITA_API = '/api?provider=gimita';
@@ -56,27 +55,50 @@ export const TestHome = () => {
     const [dramas, setDramas] = useState<DisplayDrama[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [errorDetails, setErrorDetails] = useState<string | null>(null);
     const navigate = useNavigate();
 
     const fetchGimita = async () => {
         setLoading(true);
         setError(null);
+        setErrorDetails(null);
         try {
-            // Using /home/latest for primary testing
-            const response = await fetch(`${GIMITA_API}&path=/home/latest`);
+            const apiUrl = `${window.location.origin}${GIMITA_API}&path=/home/latest`;
+            const response = await fetch(apiUrl);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
             const json = await response.json();
 
-            if (json && json.data) {
-                const normalized = (json.data || []).map(normalizeGimitaDrama);
+            if (json && json.data && Array.isArray(json.data) && json.data.length > 0) {
+                const normalized = json.data.map(normalizeGimitaDrama);
                 setDramas(normalized);
+            } else if (json && json.error) {
+                // Proxy returned an error message
+                throw new Error(json.error + (json.details ? `: ${json.details}` : ''));
             } else {
-                setError("No data received from Gimita");
+                throw new Error('API mengembalikan data kosong atau format tidak valid');
             }
         } catch (err) {
             console.error("Gimita Fetch Error:", err);
-            setError("Failed to fetch from Gimita API");
-            // Fallback mock
-            setDramas(MOCK_GIMITA.map(normalizeGimitaDrama));
+            const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+            
+            // Check for common error types
+            if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
+                setError('Gagal terhubung ke API');
+                setErrorDetails('Kemungkinan masalah CORS atau jaringan. Pastikan API proxy berfungsi dengan benar.');
+            } else if (errorMessage.includes('502') || errorMessage.includes('Bad Gateway')) {
+                setError('API Upstream Tidak Tersedia');
+                setErrorDetails('Server Gimita tidak dapat dijangkau oleh proxy.');
+            } else {
+                setError('Gagal memuat data dari Gimita API');
+                setErrorDetails(errorMessage);
+            }
+            
+            // NO MOCK DATA FALLBACK - show error UI only
+            setDramas([]);
         } finally {
             setLoading(false);
         }
@@ -104,13 +126,13 @@ export const TestHome = () => {
                     <div className="flex gap-3">
                         <Button
                             variant="secondary"
-                            className="rounded-xl font-bold bg-white/5 border-white/10 text-white hover:bg-white/10"
+                            className="rounded-xl font-bold bg-white/5 border-white/10 text-white hover:bg-white/10 gap-2"
                             onClick={fetchGimita}
                         >
-                            Refresh API
+                            <RefreshCw className="h-4 w-4" /> Refresh API
                         </Button>
-                        <Button className="rounded-xl font-bold gap-2">
-                            Explore All <ChevronRight className="h-4 w-4" />
+                        <Button className="rounded-xl font-bold gap-2" onClick={() => navigate('/')}>
+                            Kembali ke Home <ChevronRight className="h-4 w-4" />
                         </Button>
                     </div>
                 </div>
@@ -121,12 +143,47 @@ export const TestHome = () => {
                             <div key={i} className="aspect-[2/3] bg-white/5 rounded-2xl animate-pulse"></div>
                         ))}
                     </div>
-                ) : error && dramas.length === 0 ? (
-                    <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-12 text-center">
-                        <p className="text-red-400 font-bold mb-4">{error}</p>
-                        <Button onClick={fetchGimita}>Re-connect Provider</Button>
+                ) : error ? (
+                    /* ERROR STATE - No Mock Data, Clear Message */
+                    <div className="bg-red-500/10 border border-red-500/20 rounded-3xl p-8 md:p-12 text-center max-w-2xl mx-auto">
+                        <div className="inline-flex items-center justify-center w-20 h-20 bg-red-500/20 rounded-full mb-6">
+                            <AlertTriangle className="h-10 w-10 text-red-400" />
+                        </div>
+                        
+                        <h3 className="text-2xl font-black text-white mb-3">{error}</h3>
+                        
+                        {errorDetails && (
+                            <p className="text-gray-400 text-sm mb-6 bg-black/30 rounded-xl p-4 font-mono break-all">
+                                {errorDetails}
+                            </p>
+                        )}
+                        
+                        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                            <Button onClick={fetchGimita} className="gap-2">
+                                <RefreshCw className="h-4 w-4" /> Coba Lagi
+                            </Button>
+                            <Button variant="secondary" onClick={() => navigate('/')} className="gap-2">
+                                Kembali ke Home
+                            </Button>
+                        </div>
+                        
+                        <div className="mt-8 pt-6 border-t border-white/5">
+                            <p className="text-gray-500 text-xs flex items-center justify-center gap-2">
+                                <Wifi className="h-3 w-3" />
+                                Jika masalah berlanjut, periksa koneksi atau hubungi admin.
+                            </p>
+                        </div>
+                    </div>
+                ) : dramas.length === 0 ? (
+                    /* EMPTY STATE */
+                    <div className="bg-white/5 border border-white/10 rounded-3xl p-12 text-center max-w-xl mx-auto">
+                        <p className="text-gray-400">Tidak ada drama ditemukan dari API Gimita.</p>
+                        <Button onClick={fetchGimita} className="mt-4 gap-2">
+                            <RefreshCw className="h-4 w-4" /> Refresh
+                        </Button>
                     </div>
                 ) : (
+                    /* SUCCESS STATE - Show Dramas */
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-8">
                         {dramas.map((drama) => (
                             <div
@@ -193,28 +250,3 @@ export const TestHome = () => {
         </div>
     );
 };
-
-const MOCK_GIMITA: GimitaDrama[] = [
-    {
-        id: "1",
-        name: "Mocking Gimita Story",
-        cover: "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800&auto=format&fit=crop",
-        introduction: "Fallback data when API fails to connect through proxy.",
-        chapterCount: 24,
-        playCount: "1.2M",
-        cornerName: "Hot",
-        cornerColor: "#E11D48",
-        tags: [{ tagName: "Romance" }, { tagName: "Wuxia" }]
-    },
-    {
-        id: "2",
-        name: "Proxy Test Case",
-        cover: "https://images.unsplash.com/photo-1485846234645-a62644f84728?w=800&auto=format&fit=crop",
-        introduction: "Testing if the multi-provider logic works correctly.",
-        chapterCount: 16,
-        playCount: "450K",
-        cornerName: "New",
-        cornerColor: "#10B981",
-        tags: [{ tagName: "Modern" }]
-    }
-];
